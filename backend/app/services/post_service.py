@@ -54,6 +54,15 @@ def create_draft(session: Session, author: User, payload: PostCreate) -> Post:
         meta_description=payload.meta_description,
         reading_time=reading_time_minutes(payload.content),
     )
+    _apply_featured(
+        session,
+        post,
+        author,
+        featured_image=payload.featured_image,
+        featured_image_id=payload.featured_image_id,
+        url_set=payload.featured_image is not None,
+        media_set=payload.featured_image_id is not None,
+    )
     _apply_taxonomy(
         session,
         post,
@@ -142,7 +151,6 @@ def update_post(
         "subtitle",
         "excerpt",
         "content",
-        "featured_image",
         "is_featured",
         "allow_comments",
         "meta_title",
@@ -150,6 +158,16 @@ def update_post(
     ):
         if field in changes:
             setattr(post, field, changes[field])
+    if "featured_image" in changes or "featured_image_id" in changes:
+        _apply_featured(
+            session,
+            post,
+            actor,
+            featured_image=changes.get("featured_image"),
+            featured_image_id=changes.get("featured_image_id"),
+            url_set="featured_image" in changes,
+            media_set="featured_image_id" in changes,
+        )
     if "category_id" in changes or "tag_ids" in changes:
         _apply_taxonomy(
             session,
@@ -293,6 +311,33 @@ def _flush(session: Session) -> None:
     except IntegrityError as exc:
         session.rollback()
         raise ConflictError("That slug is already in use.") from exc
+
+
+def _apply_featured(
+    session: Session,
+    post: Post,
+    actor: User,
+    *,
+    featured_image: str | None,
+    featured_image_id: uuid.UUID | None,
+    url_set: bool,
+    media_set: bool,
+) -> None:
+    from app.services.media_service import require_attachable, variant_url
+
+    if media_set and featured_image_id is not None:
+        media = require_attachable(session, featured_image_id, actor)
+        post.featured_media = media
+        post.featured_image = variant_url(media, "large")
+        return
+    if media_set:
+        post.featured_media = None
+        post.featured_image = featured_image if url_set else None
+        return
+    if url_set:
+        post.featured_image = featured_image
+        if featured_image is not None:
+            post.featured_image_id = None
 
 
 def _apply_taxonomy(

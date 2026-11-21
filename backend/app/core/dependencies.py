@@ -67,6 +67,17 @@ def get_current_user(
     return user
 
 
+def get_optional_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    session: DatabaseSession,
+) -> User | None:
+    """Return the caller when a bearer token is present, otherwise None."""
+
+    if credentials is None:
+        return None
+    return get_current_user(credentials, session)
+
+
 def get_current_active_user(user: Annotated[User, Depends(get_current_user)]) -> User:
     """Return the authenticated user. Inactive accounts are already rejected."""
 
@@ -117,6 +128,7 @@ ActiveUser = Annotated[User, Depends(get_current_active_user)]
 VerifiedUser = Annotated[User, Depends(get_current_verified_user)]
 AuthorUser = Annotated[User, Depends(get_current_author)]
 AdminUser = Annotated[User, Depends(get_current_admin)]
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 __all__ = [
     "ActiveUser",
@@ -124,6 +136,7 @@ __all__ = [
     "AuthorUser",
     "CurrentUser",
     "DatabaseSession",
+    "OptionalUser",
     "SettingsDep",
     "VerifiedUser",
     "get_current_active_user",
@@ -132,5 +145,6 @@ __all__ = [
     "get_current_user",
     "get_current_verified_user",
     "get_db",
+    "get_optional_user",
     "get_settings",
 ]

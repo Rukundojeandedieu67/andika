@@ -101,6 +101,24 @@ class Settings(BaseSettings):
         ]
     )
 
+    storage_provider: Literal["local", "s3"] = "local"
+    media_storage_dir: Path = Field(default=BACKEND_ROOT / "var" / "media")
+    media_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0, le=50 * 1024 * 1024)
+    media_max_pixels: int = Field(default=20_000_000, gt=0, le=80_000_000)
+    media_max_dimension: int = Field(default=8000, gt=0, le=12000)
+    media_large_edge: int = Field(default=1600, gt=0, le=4000)
+    media_medium_edge: int = Field(default=800, gt=0, le=4000)
+    media_thumbnail_edge: int = Field(default=320, gt=0, le=2000)
+    media_webp_quality: int = Field(default=82, ge=1, le=100)
+    media_delivery: Literal["private", "public"] = "private"
+    media_signed_url_seconds: int = Field(default=3600, gt=0, le=7 * 24 * 3600)
+    s3_bucket: str = ""
+    s3_region: str = ""
+    s3_endpoint_url: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_public_base_url: str = ""
+
     @field_validator("environment", mode="before")
     @classmethod
     def normalize_environment(cls, value: object) -> object:
@@ -193,8 +211,45 @@ class Settings(BaseSettings):
             validated.append(origin.rstrip("/"))
         return list(dict.fromkeys(validated))
 
+    @field_validator("storage_provider", "media_delivery", mode="before")
+    @classmethod
+    def normalize_storage_choice(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("media_storage_dir", mode="before")
+    @classmethod
+    def resolve_media_storage_dir(cls, value: object) -> Path:
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            return BACKEND_ROOT / "var" / "media"
+        path = value if isinstance(value, Path) else Path(str(value)).expanduser()
+        if not path.is_absolute():
+            path = BACKEND_ROOT / path
+        return path
+
+    @field_validator("s3_endpoint_url", "s3_public_base_url")
+    @classmethod
+    def validate_optional_url(cls, value: str) -> str:
+        candidate = value.strip().rstrip("/")
+        if candidate == "":
+            return ""
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Storage URLs must be absolute http or https URLs.")
+        return candidate
+
     @model_validator(mode="after")
     def validate_production_configuration(self) -> Settings:
+        if self.storage_provider == "s3":
+            if self.s3_bucket.strip() == "" or self.s3_region.strip() == "":
+                raise ValueError("S3 storage requires S3_BUCKET and S3_REGION.")
+            if self.s3_access_key_id.strip() == "" or self.s3_secret_access_key.strip() == "":
+                raise ValueError(
+                    "S3 storage requires S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY."
+                )
+            if _is_placeholder_secret(self.s3_secret_access_key):
+                raise ValueError("S3_SECRET_ACCESS_KEY must not be a placeholder.")
         if self.environment != "production":
             return self
 

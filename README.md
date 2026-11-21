@@ -1,6 +1,6 @@
 # ANDIKA
 
-ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, and the article publishing workflow.
+ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, and media.
 
 The API is a FastAPI application backed by PostgreSQL. Interactive documentation is served at `/docs` once the server is running.
 
@@ -13,9 +13,10 @@ The API is a FastAPI application backed by PostgreSQL. Interactive documentation
 - Public article listing and slug lookup, with redirects when a published slug changes
 - Revision history for article content
 - Global categories, reusable tags, and article discovery by category or tag
+- Image uploads, WebP variants, and featured images on articles
 - Role checks for readers, verified authors, and verified administrators
 
-Comments, media uploads, subscriptions, and the frontend are not part of this stage.
+Comments, subscriptions, and the frontend are not part of this stage.
 
 ## Stack
 
@@ -154,6 +155,38 @@ Tag routes:
 - `GET /api/v1/tags/admin/all`
 - `PATCH /api/v1/tags/admin/{tag_id}`
 - `DELETE /api/v1/tags/admin/{tag_id}`
+
+## Media
+
+Verified authors and administrators can upload JPEG, PNG, and WebP images. Readers cannot upload. The default limit is 10 MB (`MEDIA_MAX_UPLOAD_BYTES`). The file is decoded with Pillow, EXIF orientation is applied, and the stored image does not keep the original EXIF data. Each upload produces four renditions: original, large (1600px), medium (800px), and thumbnail (320px). Those sizes are maximum edges. Aspect ratio is preserved, and small images are not enlarged.
+
+Uploads are stored under `backend/var/media` in development. The original filename is never used as a filesystem path. Set `STORAGE_PROVIDER=s3` to use an S3-compatible bucket. Credentials belong in the environment, not in source. Private delivery uses signed URLs. Public delivery uses `S3_PUBLIC_BASE_URL` or the bucket URL. Local development does not need S3 settings.
+
+An author can set `featured_image_id` on an article they own, using their own ready image. Administrators can attach any ready image. A legacy `featured_image` URL is still accepted. Article responses include `featured_image_media` when a media record is attached, and `featured_image` remains a URL. Deleting an image does not delete the article. An image that is still attached to an article cannot be deleted until it is detached. If storage removal fails, the media record stays and the API returns an error.
+
+The same image uploaded again by the same owner returns the existing record. Images on a published article can be fetched without authentication. Other images require the owner or an administrator.
+
+```http
+POST /api/v1/media/upload
+Content-Type: multipart/form-data
+
+file: photo.jpg
+alt_text: Cover photograph
+
+POST /api/v1/posts
+{"title": "A field note", "content": "Article content...", "featured_image_id": "<media uuid>"}
+```
+
+Media routes:
+
+- `POST /api/v1/media/upload`
+- `GET /api/v1/media/mine`
+- `GET /api/v1/media/{media_id}`
+- `PATCH /api/v1/media/{media_id}`
+- `DELETE /api/v1/media/{media_id}`
+- `GET /api/v1/media/{media_id}/files/{variant}`
+- `GET /api/v1/media/admin/all`
+- `DELETE /api/v1/media/admin/{media_id}`
 
 ## Tests
 

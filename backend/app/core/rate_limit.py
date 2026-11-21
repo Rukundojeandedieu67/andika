@@ -65,6 +65,7 @@ _forgot_password = RateLimiter(limit=5, window_seconds=60 * 60)
 _reset_password = RateLimiter(limit=10, window_seconds=60 * 60)
 _verify_email = RateLimiter(limit=10, window_seconds=60 * 60)
 _resend_verification = RateLimiter(limit=3, window_seconds=60 * 60)
+_media_upload = RateLimiter(limit=20, window_seconds=60 * 60)
 
 
 def _client_key(request: Request, scope: str) -> str:
@@ -113,3 +114,18 @@ def limit_verify_email(request: Request, settings: SettingsDep) -> None:
 
 def limit_resend_verification(request: Request, settings: SettingsDep) -> None:
     _enforce(request, settings, _resend_verification, "resend-verification")
+
+
+def limit_media_upload(settings: Settings, user_id: str) -> None:
+    """Limit image uploads per account. Disabled in tests with the auth limiter."""
+
+    if not settings.auth_rate_limit_enabled:
+        return
+    try:
+        _media_upload.check(f"media-upload:{user_id}")
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Try again later.",
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc

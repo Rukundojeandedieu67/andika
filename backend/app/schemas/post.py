@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.post import PostStatus
 from app.schemas.category import CategoryBrief
+from app.schemas.media import FeaturedImageRead
 from app.schemas.tag import TagBrief
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -79,6 +80,7 @@ class PostCreate(BaseModel):
     meta_title: str | None = None
     meta_description: str | None = None
     category_id: UUID | None = None
+    featured_image_id: UUID | None = None
     tag_ids: list[UUID] = Field(default_factory=list)
 
     @field_validator("tag_ids")
@@ -143,6 +145,7 @@ class PostUpdate(BaseModel):
     meta_title: str | None = None
     meta_description: str | None = None
     category_id: UUID | None = None
+    featured_image_id: UUID | None = None
     tag_ids: list[UUID] | None = None
 
     @field_validator("tag_ids")
@@ -231,6 +234,7 @@ class PostRead(BaseModel):
     author: AuthorPublic
     category: CategoryBrief | None = None
     tags: list[TagBrief] = Field(default_factory=list)
+    featured_image_media: FeaturedImageRead | None = None
 
 
 class PostPage(BaseModel):

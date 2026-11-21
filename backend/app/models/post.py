@@ -26,6 +26,7 @@ from app.models.tag import post_tags
 
 if TYPE_CHECKING:
     from app.models.category import Category
+    from app.models.media import Media
     from app.models.post_revision import PostRevision
     from app.models.tag import Tag
     from app.models.user import User
@@ -101,9 +102,15 @@ class Post(Base):
         ForeignKey("categories.id", ondelete="SET NULL"),
         index=True,
     )
+    featured_image_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("media.id", ondelete="SET NULL"),
+        index=True,
+    )
 
     author: Mapped[User] = relationship("User")
     category: Mapped[Category | None] = relationship()
+    featured_media: Mapped[Media | None] = relationship()
     tags: Mapped[list[Tag]] = relationship(secondary=post_tags, back_populates="posts")
     revisions: Mapped[list[PostRevision]] = relationship(
         "PostRevision",
@@ -116,6 +123,18 @@ class Post(Base):
         back_populates="post",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def featured_image_media(self) -> Media | None:
+        """Ready image metadata for responses. Deleted and failed images are omitted."""
+
+        media = self.featured_media
+        if media is None or media.deleted_at is not None:
+            return None
+        status = media.status.value if hasattr(media.status, "value") else str(media.status)
+        if status != "ready":
+            return None
+        return media
 
 
 class PostRedirect(Base):

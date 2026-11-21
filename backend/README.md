@@ -29,7 +29,7 @@ A Supabase PostgreSQL URL can be used instead. Keep the `postgresql+psycopg://` 
 
 ## Migrate
 
-Apply the schema, including accounts, articles, categories, and tags:
+Apply the schema, including accounts, articles, categories, tags, and media:
 
 ```powershell
 .\.venv\Scripts\alembic.exe upgrade head
@@ -101,6 +101,16 @@ Apply the taxonomy migration with the same Alembic command used for the rest of 
 ```powershell
 .\.venv\Scripts\alembic.exe upgrade head
 ```
+
+## Media
+
+Verified authors upload JPEG, PNG, and WebP files to `POST /api/v1/media/upload`. The default maximum size is 10 MB. Pillow checks the bytes, corrects EXIF orientation, drops EXIF metadata, and writes original, large, medium, and thumbnail renditions. Large, medium, and thumbnail files are WebP. Their pixel edges are maximums: 1600, 800, and 320. Proportions stay intact.
+
+`STORAGE_PROVIDER=local` writes to `MEDIA_STORAGE_DIR`, which defaults to `backend/var/media`. `STORAGE_PROVIDER=s3` uses `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`. `S3_ENDPOINT_URL` is optional for S3-compatible services. `MEDIA_DELIVERY=private` returns signed URLs. `MEDIA_DELIVERY=public` uses `S3_PUBLIC_BASE_URL` when it is set. Local development leaves the S3 variables empty.
+
+Authors attach their own ready images with `featured_image_id`. The older `featured_image` URL field still works. Public article responses include `featured_image_media`. A published article's image can be read without a token at `GET /api/v1/media/{media_id}/files/{variant}`. Deleting media never deletes an article. Media that an article still references cannot be removed. A failed storage delete does not mark the file as removed.
+
+Uploads are limited to 20 per account per hour when `AUTH_RATE_LIMIT_ENABLED` is true.
 
 ## Test
 

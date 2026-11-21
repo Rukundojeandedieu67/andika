@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 
 os.environ["ENVIRONMENT"] = "test"
 os.environ["DEBUG"] = "false"
@@ -14,6 +15,8 @@ os.environ["JWT_SECRET_KEY"] = "test-only-jwt-secret-key-with-32-characters"
 os.environ["JWT_ALGORITHM"] = "HS256"
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "15"
 os.environ["AUTH_RATE_LIMIT_ENABLED"] = "false"
+os.environ["STORAGE_PROVIDER"] = "local"
+os.environ["MEDIA_STORAGE_DIR"] = tempfile.mkdtemp(prefix="andika-test-media-")
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 
 from collections.abc import Iterator
@@ -23,6 +26,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.core.rate_limit import reset_rate_limiters
+from app.core.storage_config import set_storage_override
 from app.database.session import dispose_engine
 
 get_settings.cache_clear()
@@ -35,10 +39,12 @@ def reset_runtime_state() -> Iterator[None]:
     get_settings.cache_clear()
     dispose_engine()
     reset_rate_limiters()
+    set_storage_override(None)
     yield
     get_settings.cache_clear()
     dispose_engine()
     reset_rate_limiters()
+    set_storage_override(None)
 
 
 @pytest.fixture

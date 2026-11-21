@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import ColumnElement, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.models.media import Media
 from app.models.post import Post, PostRedirect, PostStatus
 from app.models.tag import Tag
 from app.schemas.post import PostListParams
@@ -36,6 +37,7 @@ class PostRepository:
                 joinedload(Post.author),
                 joinedload(Post.category),
                 selectinload(Post.tags),
+                selectinload(Post.featured_media).selectinload(Media.variants),
             )
             .where(Post.slug == slug)
         )
@@ -132,6 +134,7 @@ class PostRepository:
                     joinedload(Post.author),
                     joinedload(Post.category),
                     selectinload(Post.tags),
+                    selectinload(Post.featured_media).selectinload(Media.variants),
                 )
                 .where(*clauses)
                 .order_by(*order)

@@ -28,7 +28,7 @@ _HTTP_ERROR_CODES = {
     status.HTTP_404_NOT_FOUND: "not_found",
     status.HTTP_405_METHOD_NOT_ALLOWED: "method_not_allowed",
     status.HTTP_409_CONFLICT: "conflict",
-    status.HTTP_422_UNPROCESSABLE_CONTENT: "validation_error",
+    status.HTTP_413_CONTENT_TOO_LARGE: "payload_too_large",
     status.HTTP_503_SERVICE_UNAVAILABLE: "service_unavailable",
 }
 
