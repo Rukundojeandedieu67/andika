@@ -10,6 +10,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.post import PostStatus
+from app.schemas.category import CategoryBrief
+from app.schemas.tag import TagBrief
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _RESERVED_SLUGS = {"mine", "admin"}
@@ -76,6 +78,16 @@ class PostCreate(BaseModel):
     allow_comments: bool = True
     meta_title: str | None = None
     meta_description: str | None = None
+    category_id: UUID | None = None
+    tag_ids: list[UUID] = Field(default_factory=list)
+
+    @field_validator("tag_ids")
+    @classmethod
+    def validate_tag_ids(cls, value: list[UUID]) -> list[UUID]:
+        unique = list(dict.fromkeys(value))
+        if len(unique) > 20:
+            raise ValueError("An article can have at most 20 tags.")
+        return unique
 
     @field_validator("title")
     @classmethod
@@ -130,6 +142,18 @@ class PostUpdate(BaseModel):
     allow_comments: bool | None = None
     meta_title: str | None = None
     meta_description: str | None = None
+    category_id: UUID | None = None
+    tag_ids: list[UUID] | None = None
+
+    @field_validator("tag_ids")
+    @classmethod
+    def validate_tag_ids(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value is None:
+            return None
+        unique = list(dict.fromkeys(value))
+        if len(unique) > 20:
+            raise ValueError("An article can have at most 20 tags.")
+        return unique
 
     @field_validator("title")
     @classmethod
@@ -205,6 +229,8 @@ class PostRead(BaseModel):
     updated_at: datetime
     published_at: datetime | None
     author: AuthorPublic
+    category: CategoryBrief | None = None
+    tags: list[TagBrief] = Field(default_factory=list)
 
 
 class PostPage(BaseModel):
@@ -226,6 +252,8 @@ class PostListParams(BaseModel):
     search: str | None = Field(default=None, max_length=200)
     author_id: UUID | None = None
     featured: bool | None = None
+    category: str | None = Field(default=None, max_length=120)
+    tag: str | None = Field(default=None, max_length=120)
     status: PostStatus | None = None
     published_from: datetime | None = None
     published_to: datetime | None = None

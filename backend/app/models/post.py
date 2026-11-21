@@ -22,9 +22,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
 from app.database.types import UtcDateTime
+from app.models.tag import post_tags
 
 if TYPE_CHECKING:
+    from app.models.category import Category
     from app.models.post_revision import PostRevision
+    from app.models.tag import Tag
     from app.models.user import User
 
 
@@ -93,8 +96,15 @@ class Post(Base):
     )
     published_at: Mapped[datetime | None] = mapped_column(UtcDateTime, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime, index=True)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("categories.id", ondelete="SET NULL"),
+        index=True,
+    )
 
     author: Mapped[User] = relationship("User")
+    category: Mapped[Category | None] = relationship()
+    tags: Mapped[list[Tag]] = relationship(secondary=post_tags, back_populates="posts")
     revisions: Mapped[list[PostRevision]] = relationship(
         "PostRevision",
         back_populates="post",

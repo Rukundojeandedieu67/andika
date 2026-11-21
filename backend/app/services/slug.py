@@ -11,7 +11,7 @@ _RESERVED = {"mine", "admin"}
 _MAX_LENGTH = 120
 
 
-def slugify(title: str) -> str:
+def slugify(title: str, *, fallback: str = "article") -> str:
     """Turn a title into a lowercase URL slug."""
 
     normalized = unicodedata.normalize("NFKD", title)
@@ -19,7 +19,7 @@ def slugify(title: str) -> str:
     slug = _REPEATED_DASH.sub("-", _NON_SLUG.sub("-", ascii_text)).strip("-")
     slug = slug[:_MAX_LENGTH].strip("-")
     if slug == "" or slug in _RESERVED:
-        return "article"
+        return fallback
     return slug
 
 

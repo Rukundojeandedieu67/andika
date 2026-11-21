@@ -29,7 +29,7 @@ A Supabase PostgreSQL URL can be used instead. Keep the `postgresql+psycopg://` 
 
 ## Migrate
 
-Apply the authentication schema:
+Apply the schema, including accounts, articles, categories, and tags:
 
 ```powershell
 .\.venv\Scripts\alembic.exe upgrade head
@@ -82,7 +82,25 @@ Password recovery and verification return the same message whether or not the ad
 
 ## Articles
 
-Article routes are under the `posts` tag. Readers can list and open published articles. Verified authors manage their own drafts, including publish, unpublish, archive, and soft delete. Verified administrators can manage every article. Drafts, archived articles, and deleted articles are excluded from public results. Changing the slug of a published article keeps the previous slug as a permanent redirect. Content edits are stored as numbered revisions for the owner and administrators.
+Article routes are under the `posts` tag. Readers can list and open published articles. Verified authors manage their own drafts, including publish, unpublish, archive, and soft delete. Verified administrators can manage every article. Drafts, archived articles, and deleted articles are excluded from public results. Changing the slug of a published article keeps the previous slug as a permanent redirect. Content edits are stored as numbered revisions for the owner and administrators. Changing only the category or tags does not create a revision.
+
+Public article lists accept `category` and `tag` slug filters. A category filter includes that category and its visible descendants. The two filters can be combined with the existing search and pagination parameters.
+
+## Categories and tags
+
+Categories are global platform records managed by verified administrators. Authors select a category when creating or editing an article. They cannot create, rename, activate, or delete categories.
+
+Names are unique after collapsing whitespace and ignoring case. The stored name keeps the first saved capitalization. Slugs are unique. Nesting stops at three levels: a category cannot be its own parent, and it cannot be moved under one of its own children. Public responses omit an inactive category and any category whose parent is inactive.
+
+Deleting a category with children is rejected. Deleting a category with no children sets `category_id` to null on its articles. The articles are not deleted.
+
+Verified authors create reusable tags. Public tag routes return only tags attached to a published article. Administrators can list, rename, and delete every tag. Deleting a tag removes the article associations and leaves the articles in place.
+
+Apply the taxonomy migration with the same Alembic command used for the rest of the schema:
+
+```powershell
+.\.venv\Scripts\alembic.exe upgrade head
+```
 
 ## Test
 

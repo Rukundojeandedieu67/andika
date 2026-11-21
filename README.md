@@ -12,9 +12,10 @@ The API is a FastAPI application backed by PostgreSQL. Interactive documentation
 - Draft, publish, unpublish, archive, and soft-delete for articles
 - Public article listing and slug lookup, with redirects when a published slug changes
 - Revision history for article content
+- Global categories, reusable tags, and article discovery by category or tag
 - Role checks for readers, verified authors, and verified administrators
 
-Comments, categories, tags, media uploads, subscriptions, and the frontend are not part of this stage.
+Comments, media uploads, subscriptions, and the frontend are not part of this stage.
 
 ## Stack
 
@@ -101,6 +102,58 @@ Main routes:
 - `DELETE /api/v1/posts/{post_id}`
 - `GET /api/v1/posts/{post_id}/revisions`
 - `GET /api/v1/posts/admin/all`
+
+Public listing also accepts `category` and `tag` slug filters, including both together:
+
+```http
+GET /api/v1/posts?category=technology&tag=python
+```
+
+A category filter includes that category and its visible child categories. Drafts, archived articles, and deleted articles stay out of public results.
+
+## Categories and tags
+
+Categories are global. A verified administrator creates, renames, nests, activates, deactivates, and deletes them. Authors choose an existing category for their own articles. Readers and authors cannot change the category catalog.
+
+A category name is stored with its capitalization, and uniqueness uses the name with surrounding and repeated spaces collapsed and with case ignored. `Technology` and `TECHNOLOGY` are the same category. Slugs are unique. A category may have a parent, but it cannot be its own parent, cannot sit under one of its children, and cannot be nested more than three levels.
+
+An inactive category, and every category under an inactive parent, is omitted from public category and article results. Assigning an inactive category to an article is rejected.
+
+Deleting a category that still has children is rejected. Deleting a leaf category clears that category on existing articles and does not delete the articles.
+
+Tags are reusable. A verified author can create one. The same name rules apply. Public tag lists and tag pages include only tags used by at least one published article. Administrators can list every tag, rename a tag, or delete it. Deleting a tag removes it from articles and leaves the articles in place.
+
+```http
+POST /api/v1/categories
+{"name": "Technology", "description": "Platform and tools"}
+
+POST /api/v1/tags
+{"name": "Python"}
+
+POST /api/v1/posts
+{"title": "The Future of Artificial Intelligence", "content": "Article content...", "category_id": "<category uuid>", "tag_ids": ["<tag uuid>"]}
+```
+
+Category routes:
+
+- `GET /api/v1/categories`
+- `GET /api/v1/categories/{slug}`
+- `GET /api/v1/categories/{slug}/posts`
+- `POST /api/v1/categories`
+- `PATCH /api/v1/categories/{category_id}`
+- `GET /api/v1/categories/admin/all`
+- `PATCH /api/v1/categories/admin/{category_id}/status`
+- `DELETE /api/v1/categories/admin/{category_id}`
+
+Tag routes:
+
+- `GET /api/v1/tags`
+- `GET /api/v1/tags/{slug}`
+- `GET /api/v1/tags/{slug}/posts`
+- `POST /api/v1/tags`
+- `GET /api/v1/tags/admin/all`
+- `PATCH /api/v1/tags/admin/{tag_id}`
+- `DELETE /api/v1/tags/admin/{tag_id}`
 
 ## Tests
 

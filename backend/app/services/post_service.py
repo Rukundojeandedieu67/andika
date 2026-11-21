@@ -13,6 +13,7 @@ from app.models.post_revision import PostRevision
 from app.models.user import User, UserRole
 from app.repositories.post_repository import PostRepository
 from app.schemas.post import PostCreate, PostListParams, PostUpdate
+from app.services.category_service import require_assignable
 from app.services.exceptions import ConflictError, NotFoundError, ServiceError
 from app.services.post_revision_service import (
     get_revision,
@@ -20,6 +21,7 @@ from app.services.post_revision_service import (
     record_previous_content,
 )
 from app.services.slug import slugify, with_suffix
+from app.services.tag_service import require_tags
 
 _CONTENT_FIELDS = {"title", "excerpt", "content"}
 
@@ -51,6 +53,14 @@ def create_draft(session: Session, author: User, payload: PostCreate) -> Post:
         meta_title=payload.meta_title,
         meta_description=payload.meta_description,
         reading_time=reading_time_minutes(payload.content),
+    )
+    _apply_taxonomy(
+        session,
+        post,
+        category_id=payload.category_id,
+        tag_ids=payload.tag_ids,
+        category_set=True,
+        tags_set=True,
     )
     try:
         return posts.add(post)
@@ -140,6 +150,15 @@ def update_post(
     ):
         if field in changes:
             setattr(post, field, changes[field])
+    if "category_id" in changes or "tag_ids" in changes:
+        _apply_taxonomy(
+            session,
+            post,
+            category_id=changes.get("category_id"),
+            tag_ids=changes.get("tag_ids"),
+            category_set="category_id" in changes,
+            tags_set="tag_ids" in changes,
+        )
     post.reading_time = reading_time_minutes(post.content)
     post.updated_at = datetime.now(UTC)
     _flush(session)
@@ -274,3 +293,18 @@ def _flush(session: Session) -> None:
     except IntegrityError as exc:
         session.rollback()
         raise ConflictError("That slug is already in use.") from exc
+
+
+def _apply_taxonomy(
+    session: Session,
+    post: Post,
+    *,
+    category_id: uuid.UUID | None,
+    tag_ids: list[uuid.UUID] | None,
+    category_set: bool,
+    tags_set: bool,
+) -> None:
+    if category_set:
+        post.category = None if category_id is None else require_assignable(session, category_id)
+    if tags_set:
+        post.tags = [] if not tag_ids else require_tags(session, tag_ids)

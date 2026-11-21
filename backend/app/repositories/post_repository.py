@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ColumnElement, func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import ColumnElement, false, func, or_, select
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.post import Post, PostRedirect, PostStatus
+from app.models.tag import Tag
 from app.schemas.post import PostListParams
 
 
@@ -30,7 +31,13 @@ class PostRepository:
 
     def get_by_slug(self, slug: str) -> Post | None:
         return self.session.scalar(
-            select(Post).options(joinedload(Post.author)).where(Post.slug == slug)
+            select(Post)
+            .options(
+                joinedload(Post.author),
+                joinedload(Post.category),
+                selectinload(Post.tags),
+            )
+            .where(Post.slug == slug)
         )
 
     def get_redirect(self, slug: str) -> PostRedirect | None:
@@ -91,6 +98,11 @@ class PostRepository:
             clauses.append(Post.author_id == params.author_id)
         if params.featured is not None:
             clauses.append(Post.is_featured.is_(params.featured))
+        if params.category:
+            category_ids = self._category_filter_ids(params.category)
+            clauses.append(Post.category_id.in_(category_ids) if category_ids else false())
+        if params.tag:
+            clauses.append(Post.tags.any(Tag.slug == params.tag))
         if params.search:
             term = (
                 params.search.replace("\\", "\\\\")
@@ -116,7 +128,11 @@ class PostRepository:
         rows = (
             self.session.scalars(
                 select(Post)
-                .options(joinedload(Post.author))
+                .options(
+                    joinedload(Post.author),
+                    joinedload(Post.category),
+                    selectinload(Post.tags),
+                )
                 .where(*clauses)
                 .order_by(*order)
                 .offset((params.page - 1) * params.page_size)
@@ -126,3 +142,8 @@ class PostRepository:
             .all()
         )
         return list(rows), int(total or 0)
+
+    def _category_filter_ids(self, slug: str) -> list[uuid.UUID]:
+        from app.services.category_service import public_category_ids
+
+        return public_category_ids(self.session, slug)

@@ -47,6 +47,8 @@ def list_posts(
     search: Annotated[str | None, Query(max_length=200)] = None,
     author_id: UUID | None = None,
     featured: bool | None = None,
+    category: Annotated[str | None, Query(max_length=120)] = None,
+    tag: Annotated[str | None, Query(max_length=120)] = None,
 ) -> PostPage:
     """Return published articles. Drafts, archived articles, and deletions are excluded."""
 
@@ -56,6 +58,8 @@ def list_posts(
         search=search,
         author_id=author_id,
         featured=featured,
+        category=category,
+        tag=tag,
     )
     items, total = post_service.list_published(session, params)
     return _page(items, params, total)
