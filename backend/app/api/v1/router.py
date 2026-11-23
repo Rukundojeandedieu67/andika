@@ -7,9 +7,13 @@ from app.api.v1.endpoints import (
     categories,
     comments,
     health,
+    invitations,
     media,
     moderation,
+    notifications,
     posts,
+    publications,
+    search,
     system,
     tags,
     users,
@@ -26,3 +30,8 @@ api_router.include_router(moderation.router, prefix="/moderation", tags=["modera
 api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"])
 api_router.include_router(media.router, prefix="/media", tags=["media"])
+api_router.include_router(publications.router, prefix="/publications", tags=["publications"])
+api_router.include_router(invitations.router, prefix="/invitations", tags=["publications"])
+api_router.include_router(search.router, prefix="/search", tags=["search"])
+api_router.include_router(search.discovery_router, prefix="/discovery", tags=["discovery"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

@@ -1,6 +1,6 @@
 # ANDIKA
 
-ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, media, and comments.
+ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, media, comments, publications, search, and notifications.
 
 The API is a FastAPI application backed by PostgreSQL. Interactive documentation is served at `/docs` once the server is running.
 
@@ -15,6 +15,9 @@ The API is a FastAPI application backed by PostgreSQL. Interactive documentation
 - Global categories, reusable tags, and article discovery by category or tag
 - Image uploads, WebP variants, and featured images on articles
 - Threaded comments, reports, and moderation
+- Publications with membership roles, invitations, and editorial review
+- Public search, discovery feeds, related articles, suggestions, and view counts
+- Private in-app notifications and preference-controlled email delivery
 - Role checks for readers, verified authors, and verified administrators
 
 Subscriptions and the frontend are not part of this stage.
@@ -234,6 +237,133 @@ Comment routes:
 - `GET /api/v1/moderation/reports`
 - `PATCH /api/v1/moderation/reports/{report_id}`
 - `GET /api/v1/moderation/logs`
+
+## Publications
+
+An author can still publish an article on their own. A publication is a separate editorial space, such as a magazine or journal, with its own members. Joining a publication does not change the person's platform role, and the publication owner is not a platform administrator.
+
+Publication roles are owner, editor, author, and contributor. They apply only inside that publication. A suspended or removed member loses access immediately. A person may belong to more than one publication. Each publication has one owner. Ownership moves with `POST /api/v1/publications/{publication_id}/transfer-ownership`, which also turns the previous owner into an editor. The owner cannot be removed or suspended until ownership moves.
+
+Public visitors can list and open active public publications and their published articles. Private, suspended, archived, and deleted publications are omitted. Their articles stay out of the public article list, the public slug route, and public comments.
+
+Article slugs stay unique across the whole platform. A publication article keeps the same public URL as an independent article: `GET /api/v1/posts/{slug}`. Publication slugs are a separate namespace under `/api/v1/publications/{slug}`. The reserved publication slug is `mine`.
+
+Publication articles keep the existing draft, published, and archived states. Review uses a separate `editorial_status`: draft, submitted, in review, changes requested, approved, and published. By default a publication requires review. Contributors and authors submit their own drafts. Editors and the owner move a submission into review, request changes, or approve it. Only an editor or the owner can publish while review is required. If the owner turns review off, an author can publish their own draft directly. Contributors cannot publish. Every transition is stored in an editorial history that the API does not edit or delete.
+
+Invitations are single-use, expire, and are stored only as SHA-256 hashes. The email link carries the token in the URL fragment (`#token=`). Accepting requires a verified account whose email matches the invitation. An invitation cannot grant ownership or a platform administrator role. Creating and accepting invitations is rate limited per account while `AUTH_RATE_LIMIT_ENABLED` is true. If SMTP is not configured, the API says delivery is not configured. In development the unsent message is written under `backend/var/mail/`.
+
+```http
+POST /api/v1/publications
+{"name": "North Review", "visibility": "public"}
+
+POST /api/v1/publications/<publication uuid>/invitations
+{"email": "editor@example.com", "role": "editor"}
+
+POST /api/v1/invitations/accept
+{"token": "<token from the email fragment>"}
+
+POST /api/v1/posts
+{"title": "Dispatch From the Field", "content": "The first report.", "publication_id": "<publication uuid>"}
+
+POST /api/v1/posts/<post uuid>/submit
+POST /api/v1/posts/<post uuid>/approve
+POST /api/v1/posts/<post uuid>/publish
+```
+
+Publication routes:
+
+- `GET /api/v1/publications`
+- `POST /api/v1/publications`
+- `GET /api/v1/publications/mine`
+- `GET /api/v1/publications/{slug}`
+- `GET /api/v1/publications/{slug}/posts`
+- `GET /api/v1/publications/{publication_id}/manage`
+- `PATCH /api/v1/publications/{publication_id}`
+- `POST /api/v1/publications/{publication_id}/archive`
+- `POST /api/v1/publications/{publication_id}/restore`
+- `GET /api/v1/publications/{publication_id}/members`
+- `PATCH /api/v1/publications/{publication_id}/members/{member_id}`
+- `POST /api/v1/publications/{publication_id}/members/{member_id}/suspend`
+- `POST /api/v1/publications/{publication_id}/members/{member_id}/remove`
+- `POST /api/v1/publications/{publication_id}/transfer-ownership`
+- `POST /api/v1/publications/{publication_id}/invitations`
+- `GET /api/v1/publications/{publication_id}/invitations`
+- `POST /api/v1/publications/{publication_id}/invitations/{invitation_id}/revoke`
+- `POST /api/v1/invitations/accept`
+- `GET /api/v1/publications/{publication_id}/editorial/posts`
+- `GET /api/v1/publications/{publication_id}/editorial/posts/{post_id}`
+- `GET /api/v1/publications/{publication_id}/editorial/submissions`
+- `POST /api/v1/posts/{post_id}/submit`
+- `POST /api/v1/posts/{post_id}/start-review`
+- `POST /api/v1/posts/{post_id}/request-changes`
+- `POST /api/v1/posts/{post_id}/approve`
+- `GET /api/v1/publications/{publication_id}/audit-logs`
+
+## Search and discovery
+
+Search uses PostgreSQL. The application stores a plain-text `posts.search_document` in the same transaction as the article change. A database trigger then fills `posts.search_vector` with `to_tsvector('simple', search_document)`. The `simple` dictionary keeps words from any language instead of applying English stemming. A GIN index, `ix_posts_search_vector`, serves `websearch_to_tsquery`. Article text is ranked with `ts_rank_cd`. The document includes the title, subtitle, excerpt, body text with tags removed, category name, tag names, author name and username, and publication name. It is capped at 20,000 characters.
+
+The document is rebuilt when the article text, category, or tags change, and when an author, publication, category, or tag is renamed. Drafts stay in the document, but public queries only return published articles that are independent or belong to an active public publication. Archived, deleted, private, suspended, and archived-publication articles are excluded. Search cards do not include the article body or a ranking score.
+
+`pg_trgm` is enabled for partial names and title typos. Trigram GIN indexes cover article titles, usernames, full names, publication names, category names, and tag names. An article matches when its vector matches the query, its title contains the query, or the title similarity is above 0.3. Author, publication, and title suggestions use the same similarity threshold. Body text matches query words and is not fuzzy-matched.
+
+`GET /api/v1/search` accepts `q`, `type` (`all`, `articles`, `authors`, `publications`, `categories`, `tags`), `category`, `tag`, `author` (username), `publication` (slug), `date_from`, `date_to`, `sort` (`relevance`, `newest`, `oldest`, `most_viewed`, `most_commented`), `page`, and `page_size`. An empty `q` returns the latest public articles and leaves the other sections empty. Filters still apply to that article list, and no analytics row is stored. A query with no word characters returns empty sections. `type=all` pages each section separately with the same page size. `author` is a username. `date_from` later than `date_to` is rejected.
+
+Examples:
+
+```text
+GET /api/v1/search?q=digital+gardens
+GET /api/v1/search?q=kelp&type=articles&category=oceans&sort=newest
+GET /api/v1/search?type=authors&q=ada
+```
+
+Discovery feeds are `GET /api/v1/discovery/articles?feed=latest|trending|popular|discussed|featured`. There is no follow or subscription feed. Author and publication directories are `GET /api/v1/discovery/authors` and `GET /api/v1/discovery/publications`. Related articles are `GET /api/v1/posts/{post_id}/related`.
+
+Trending is not a recommendation model. For the last 7 days:
+
+```text
+score = (views + 3 × approved comments) / (1 + age_in_days / 7)
+```
+
+Ties break on newer `published_at`, then article id. The weights live in code. Popular is the all-time view count. Discussed is the all-time count of approved comments that were not deleted. Featured is `is_featured` articles, newest first.
+
+A view is `POST /api/v1/posts/{slug}/view`. Send `X-Visitor-Id` (8 to 80 letters, numbers, underscores, or hyphens) or call it while signed in. The stored value is a SHA-256 hash of the server secret and that identity. Raw addresses and account ids are not stored. The same visitor and article count once per `VIEW_DEDUP_HOURS` (6). The article author, a missing identity, and user agents containing `health-check` or `kube-probe` are not counted. An unpublished or private article returns 404. Optional `source` is 1 to 40 characters from `a-z`, `0-9`, `_`, and `-`.
+
+Related articles share a category (5 points), tag (2 points each), publication (2 points), author (1 point), or a title word of at least four characters (1 point). The current article is excluded. At most 100 candidates are loaded, then ordered by score, newer publication date, and id. `limit` defaults to 5 and cannot exceed 20.
+
+`GET /api/v1/search/suggestions?q=` needs at least two characters and returns at most 8 public titles, author names, publication names, categories, and tags. It is limited to `SUGGESTION_RATE_LIMIT_PER_HOUR` (60) per client address while `AUTH_RATE_LIMIT_ENABLED` is true.
+
+A non-empty search stores the query text, type, result count, and time in `search_events`. It does not store an account or address. Rows older than 90 days are deleted when a new search is recorded. Administrators can read 30-day totals at `GET /api/v1/search/admin/stats`. There is no route for one person's search history.
+
+The automated tests use SQLite, which has no `tsvector`. Those tests match the stored document in process, including a one-character typo on words of five characters or more. That fallback is not the production query.
+
+## Notifications
+
+A business action writes its in-app notification in the same database transaction. If that action rolls back, the notification rolls back with it. Email is a separate outbox row, `notification_deliveries`. The API process does not wait for SMTP. A failed email leaves the in-app notification in place.
+
+The worker is a separate process:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.workers.notification_worker
+.\.venv\Scripts\python.exe -m app.workers.notification_worker --once
+```
+
+It polls every `NOTIFICATION_WORKER_POLL_SECONDS` (5), claims up to `NOTIFICATION_WORKER_BATCH_SIZE` (20) pending jobs, and commits that claim before opening SMTP. Temporary failures return to the queue with a backoff of 60 seconds, doubling each attempt, capped at 15 minutes. A job stops after `NOTIFICATION_EMAIL_MAX_ATTEMPTS` (5). A rejected recipient is not retried. When SMTP is not configured, the job is marked `not_configured` and is not described as sent. In development, that same attempt writes a copy under `backend/var/mail/`. A claim left in `sending` for 10 minutes is returned to the queue so a restarted worker can finish it.
+
+Each event has one idempotency key, so a repeated call does not create a second notification. People are not notified about their own actions. Comment text is not copied into the notification. Invitation tokens stay in the existing invitation email and are not stored in the notification or the outbox. That invitation email is still sent even when publication email is disabled, because it is the acceptance credential. Verification and password messages are unchanged.
+
+Preferences are independent for in-app and email, across comments, publications, editorial decisions, and account notices. Defaults are enabled. `GET` and `PATCH /api/v1/notifications/preferences` apply only to the signed-in user. Account notices are reserved; the current events are comments, publications, and editorial decisions.
+
+```text
+GET /api/v1/notifications?unread_only=true
+GET /api/v1/notifications/unread-count
+PATCH /api/v1/notifications/{notification_id}/read
+POST /api/v1/notifications/read-all
+DELETE /api/v1/notifications/{notification_id}
+GET /api/v1/notifications/admin/delivery
+```
+
+The admin route returns delivery counts and failed job ids. It does not return addresses or message bodies.
 
 ## Tests
 

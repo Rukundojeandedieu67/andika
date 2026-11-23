@@ -122,6 +122,15 @@ class Settings(BaseSettings):
     comment_max_length: int = Field(default=2000, ge=20, le=10000)
     comment_rate_limit_per_hour: int = Field(default=30, gt=0, le=300)
     report_rate_limit_per_hour: int = Field(default=10, gt=0, le=100)
+    invitation_expire_hours: int = Field(default=72, gt=0, le=168)
+    invitation_rate_limit_per_hour: int = Field(default=20, gt=0, le=100)
+    invitation_accept_rate_limit_per_hour: int = Field(default=10, gt=0, le=100)
+    view_dedup_hours: int = Field(default=6, gt=0, le=168)
+    suggestion_rate_limit_per_hour: int = Field(default=60, gt=0, le=300)
+    notification_worker_poll_seconds: int = Field(default=5, ge=1, le=60)
+    notification_worker_batch_size: int = Field(default=20, ge=1, le=100)
+    notification_email_max_attempts: int = Field(default=5, ge=1, le=10)
+    notification_rate_limit_per_hour: int = Field(default=60, gt=0, le=120)
 
     @field_validator("environment", mode="before")
     @classmethod

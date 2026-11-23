@@ -18,6 +18,7 @@ from app.schemas.category import (
     CategoryUpdate,
 )
 from app.services.exceptions import ConflictError, NotFoundError, ServiceError
+from app.services.search_text import refresh_for_category
 from app.services.slug import slugify, with_suffix
 
 
@@ -60,7 +61,10 @@ def update_category(
         else:
             category.parent_id = _parent_for_move(categories, category, parent_id).id
     category.updated_at = datetime.now(UTC)
-    return _save(session, categories, category)
+    saved = _save(session, categories, category)
+    if "name" in changes and changes["name"] is not None:
+        refresh_for_category(session, saved.id)
+    return saved
 
 
 def set_status(session: Session, category_id: uuid.UUID, *, is_active: bool) -> Category:

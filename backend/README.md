@@ -29,7 +29,7 @@ A Supabase PostgreSQL URL can be used instead. Keep the `postgresql+psycopg://` 
 
 ## Migrate
 
-Apply the schema, including accounts, articles, categories, tags, media, and comments:
+Apply the schema, including accounts, articles, categories, tags, media, comments, publications, search, and notifications:
 
 ```powershell
 .\.venv\Scripts\alembic.exe upgrade head
@@ -119,6 +119,70 @@ Signed-in users can comment on a published article when comments are open. Verif
 Threads have two levels: a root comment and replies to that root. A reply cannot contain another reply. HTML is stripped before the body is stored. The default limit is 2,000 characters (`COMMENT_MAX_LENGTH`). Duplicate text from the same person on the same thread is rejected. Comment creation is limited to `COMMENT_RATE_LIMIT_PER_HOUR` (30) and reports to `REPORT_RATE_LIMIT_PER_HOUR` (10) while rate limiting is enabled.
 
 Soft-deleting a comment hides its text. Public replies remain under the placeholder "This comment was removed." The article author can approve, hide, and restore comments on that article only. Administrators can also reject comments. Each decision is appended to `moderation_logs`. Reports do not delete comments, and a person can report a comment only once.
+
+## Publications
+
+Verified users can open a publication with `POST /api/v1/publications`. The caller becomes the owner and keeps their existing platform role. Independent articles remain articles with no publication.
+
+Membership roles are owner, editor, author, and contributor. Owners manage settings, members, invitations, and every article. Editors can update the description, website, contact email, and branding. They can invite authors and contributors when `editors_can_invite` is true, and they can review and publish articles. Authors write and submit their own articles. Contributors write and submit their own drafts. When `requires_review` is true, only an editor or the owner publishes. When it is false, an author may publish their own draft. Contributors never publish.
+
+Article URLs stay `GET /api/v1/posts/{slug}`. Slugs remain unique for the whole site, including publication articles. Public publication pages are `GET /api/v1/publications/{slug}` and `GET /api/v1/publications/{slug}/posts`. Private or inactive publications, and their articles, are not in those public responses.
+
+Editorial state is stored separately from draft, published, and archived. The values are `draft`, `submitted`, `in_review`, `changes_requested`, `approved`, and `published`. Submit, start review, request changes, and approve are `POST` routes under `/api/v1/posts/{post_id}/`. Publishing still uses the existing publish route and still records content revisions. Each editorial change is appended to `editorial_events`.
+
+Invitations expire after `INVITATION_EXPIRE_HOURS` (72). Only the SHA-256 hash is stored. The message uses the same fragment link as other account email. Acceptance checks the hash, expiry, single use, verified email, and an exact email match. New invitations are limited to `INVITATION_RATE_LIMIT_PER_HOUR` (20) and acceptance attempts to `INVITATION_ACCEPT_RATE_LIMIT_PER_HOUR` (10) while `AUTH_RATE_LIMIT_ENABLED` is true. Without SMTP, the response says email delivery is not configured. In development the unsent copy is under `backend/var/mail/`.
+
+Publication management changes are appended to `publication_audit_logs`. Owners and editors can read that log. The API has no route to edit or delete it. A platform administrator can suspend an active publication, or reinstate a suspended one, by sending `status` on `PATCH /api/v1/publications/{publication_id}`. Owners archive and restore with the archive and restore routes.
+
+## Search and discovery
+
+PostgreSQL full-text search is the production search path. `posts.search_document` is plain text maintained by the application when an article, author name, publication name, category name, or tag name changes. A `BEFORE INSERT OR UPDATE` trigger writes `posts.search_vector` with `to_tsvector('simple', search_document)`. Search uses `websearch_to_tsquery('simple', :q)` and `ts_rank_cd`, with GIN index `ix_posts_search_vector`. The `simple` configuration does not stem words, so it stays usable for more than one language.
+
+`pg_trgm` adds GIN indexes on titles, usernames, full names, publication names, category names, and tag names. Article search matches the vector, a title substring, or a title `similarity` above 0.3. Name discovery and suggestions use that same similarity threshold. Body text matches query words and is not fuzzy-matched.
+
+Public search is `GET /api/v1/search`. An empty `q` returns the latest public articles and empty author, publication, category, and tag sections. No search event is stored for that request. `type=all` returns a separate page for each section.
+
+```text
+GET /api/v1/search?q=digital+gardens
+GET /api/v1/search?q=kelp&type=articles&category=oceans&tag=kelp&sort=most_commented
+GET /api/v1/discovery/articles?feed=trending
+GET /api/v1/discovery/authors?q=ada
+GET /api/v1/discovery/publications?q=harbor
+GET /api/v1/posts/{post_id}/related?limit=5
+GET /api/v1/search/suggestions?q=dig
+POST /api/v1/posts/{slug}/view
+```
+
+Trending score, over a 7-day window:
+
+```text
+(views + 3 × approved comments) / (1 + age_in_days / 7)
+```
+
+Popular uses all-time views. Discussed uses all-time approved comments. Featured uses `is_featured`. None of these feeds is a machine-learning ranking.
+
+Views are rows in `article_views`: article id, time, optional source, and a SHA-256 visitor hash. The hash input is the server secret plus either `user:{account id}` or the `X-Visitor-Id` header. IP addresses are not stored. The same hash and article are ignored for `VIEW_DEDUP_HOURS` (default 6). Authors viewing their own article, missing visitor identity, `health-check` and `kube-probe` user agents, and unpublished articles are not counted.
+
+Suggestions require two characters, return at most 8 rows, and follow `SUGGESTION_RATE_LIMIT_PER_HOUR` when rate limiting is enabled. Draft titles and private publication names are omitted.
+
+`search_events` stores the query, type, result count, and time for a non-empty search. It has no account column. Recording a search deletes events older than 90 days. `GET /api/v1/search/admin/stats` returns 30-day aggregates for an administrator.
+
+The pytest suite matches `search_document` on SQLite, including one-character typos for longer words. Production queries stay in SQL.
+
+## Notifications
+
+Notifications are written in the same transaction as the action that caused them. Email is queued in `notification_deliveries` and sent by a separate worker, using the existing SMTP settings and development mail folder. Start the API and the worker independently:
+
+```powershell
+uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe -m app.workers.notification_worker
+```
+
+`--once` processes a single batch and exits. The worker claims at most `NOTIFICATION_WORKER_BATCH_SIZE` rows (20), commits the claim, then sends mail. Temporary failures retry up to `NOTIFICATION_EMAIL_MAX_ATTEMPTS` (5) with backoff from 60 seconds, doubling each time and capped at 15 minutes. Recipient rejection is permanent. Unconfigured SMTP is stored as `not_configured`, and in development a copy is written under `var/mail/`. A `sending` row older than 10 minutes is claimed again after a restart.
+
+In-app and email switches are separate for comments, publications, editorial updates, and account notices. Defaults are on. Users can read, mark, and delete only their own in-app notifications. Comment bodies and invitation tokens are not stored in notifications. The existing invitation email still carries the acceptance token and does not follow the publication email switch. Password and verification mail are unchanged.
+
+`GET /api/v1/notifications/admin/delivery` is limited to administrators and omits addresses and message bodies. Notification writes are limited to `NOTIFICATION_RATE_LIMIT_PER_HOUR` (60) while rate limiting is enabled.
 
 ## Test
 

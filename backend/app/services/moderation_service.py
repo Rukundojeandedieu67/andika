@@ -157,7 +157,7 @@ def _change_status(
     previous = comment.status
     comment.status = status
     comment.updated_at = datetime.now(UTC)
-    ModerationRepository(session).add(
+    entry = ModerationRepository(session).add(
         ModerationLog(
             moderator_id=actor.id,
             comment_id=comment.id,
@@ -168,6 +168,16 @@ def _change_status(
         )
     )
     session.flush()
+    from app.services.notification_events import comment_moderated
+
+    comment_moderated(
+        session,
+        comment_author_id=comment.author_id,
+        actor=actor,
+        post_id=comment.post_id,
+        status_value=status.value,
+        log_id=entry.id,
+    )
     if comment.author is None:
         session.refresh(comment)
     return comment

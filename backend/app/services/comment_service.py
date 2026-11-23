@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.models.comment import Comment, CommentStatus
-from app.models.post import Post, PostStatus
+from app.models.post import Post
 from app.models.user import User
 from app.repositories.comment_repository import CommentRepository
 from app.schemas.comment import CommentRead
@@ -50,7 +50,17 @@ def create_comment(
         status=CommentStatus.APPROVED if author.is_verified else CommentStatus.PENDING,
         author=author,
     )
-    return comments.add(comment)
+    stored = comments.add(comment)
+    from app.services.notification_events import comment_created
+
+    comment_created(
+        session,
+        post,
+        comment_id=stored.id,
+        actor=author,
+        parent_author_id=None if parent is None else parent.author_id,
+    )
+    return stored
 
 
 def update_comment(
@@ -125,7 +135,9 @@ def _open_post(session: Session, post_id: uuid.UUID) -> Post:
 
 def _published_post(session: Session, post_id: uuid.UUID) -> Post:
     post = session.get(Post, post_id)
-    if post is None or post.deleted_at is not None or post.status is not PostStatus.PUBLISHED:
+    from app.services.visibility import is_publicly_listed
+
+    if not is_publicly_listed(session, post):
         raise NotFoundError()
     return post
 

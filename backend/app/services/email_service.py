@@ -20,6 +20,7 @@ class EmailStatus(str, Enum):
     SENT = "sent"
     NOT_CONFIGURED = "not_configured"
     FAILED = "failed"
+    PERMANENT_FAILURE = "permanent_failure"
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,30 @@ class EmailService:
             body=body,
         )
 
+    def send_publication_invitation(
+        self,
+        *,
+        recipient: str,
+        token: str,
+        publication_name: str,
+        expires_at: datetime,
+    ) -> EmailResult:
+        link = f"{self._settings.public_app_url}/invitations/accept#token={token}"
+        body = (
+            f"You have been invited to join {publication_name} on ANDIKA.\n\n"
+            f"Open this link: {link}\n\n"
+            "The token is in the URL fragment so it is not sent to the server as a "
+            "query parameter. The link expires at "
+            f"{expires_at.isoformat()} and can be used once.\n\n"
+            "If you were not expecting this invitation, you can ignore this message."
+        )
+        return self._send(
+            template="publication_invitation",
+            recipient=recipient,
+            subject=f"Join {publication_name} on ANDIKA",
+            body=body,
+        )
+
     def send_password_changed(self, *, recipient: str) -> EmailResult:
         body = (
             "The password for your ANDIKA account was changed.\n\n"
@@ -122,6 +147,9 @@ class EmailService:
                 "Email delivery failed for %s: %s", template, type(exc).__name__
             )
             return EmailResult(status=EmailStatus.FAILED, template=template)
+        except smtplib.SMTPRecipientsRefused:
+            logger.warning("Email delivery rejected recipients for %s", template)
+            return EmailResult(status=EmailStatus.PERMANENT_FAILURE, template=template)
         except smtplib.SMTPException as exc:
             logger.warning(
                 "Email delivery failed for %s: %s", template, type(exc).__name__
@@ -129,6 +157,16 @@ class EmailService:
             return EmailResult(status=EmailStatus.FAILED, template=template)
         logger.info("Email sent: %s", template)
         return EmailResult(status=EmailStatus.SENT, template=template)
+
+    def send_notification(self, *, recipient: str, subject: str, body: str) -> EmailResult:
+        """Send one notification email through the same SMTP path as account mail."""
+
+        return self._send(
+            template="notification",
+            recipient=recipient,
+            subject=subject,
+            body=body,
+        )
 
     def _save_development_copy(
         self, *, template: str, recipient: str, subject: str, body: str

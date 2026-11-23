@@ -22,12 +22,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
 from app.database.types import UtcDateTime
+from app.models.editorial import EditorialStatus
 from app.models.tag import post_tags
 
 if TYPE_CHECKING:
     from app.models.category import Category
     from app.models.media import Media
     from app.models.post_revision import PostRevision
+    from app.models.publication import Publication
     from app.models.tag import Tag
     from app.models.user import User
 
@@ -48,6 +50,11 @@ class Post(Base):
         CheckConstraint(
             "status IN ('draft', 'published', 'archived')",
             name="status",
+        ),
+        CheckConstraint(
+            "editorial_status IS NULL OR editorial_status IN "
+            "('draft', 'submitted', 'in_review', 'changes_requested', 'approved', 'published')",
+            name="editorial_status",
         ),
         Index("ix_posts_status_published_at", "status", "published_at"),
     )
@@ -107,8 +114,27 @@ class Post(Base):
         ForeignKey("media.id", ondelete="SET NULL"),
         index=True,
     )
+    publication_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("publications.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    editorial_status: Mapped[EditorialStatus | None] = mapped_column(
+        Enum(
+            EditorialStatus,
+            name="post_editorial_status",
+            native_enum=False,
+            length=32,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        index=True,
+    )
+    search_document: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
 
     author: Mapped[User] = relationship("User")
+    publication: Mapped[Publication | None] = relationship()
     category: Mapped[Category | None] = relationship()
     featured_media: Mapped[Media | None] = relationship()
     tags: Mapped[list[Tag]] = relationship(secondary=post_tags, back_populates="posts")

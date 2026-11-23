@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.editorial import EditorialStatus
 from app.models.post import PostStatus
 from app.schemas.category import CategoryBrief
 from app.schemas.media import FeaturedImageRead
@@ -81,6 +82,8 @@ class PostCreate(BaseModel):
     meta_description: str | None = None
     category_id: UUID | None = None
     featured_image_id: UUID | None = None
+    publication_id: UUID | None = None
+    author_id: str | None = None
     tag_ids: list[UUID] = Field(default_factory=list)
 
     @field_validator("tag_ids")
@@ -232,6 +235,8 @@ class PostRead(BaseModel):
     updated_at: datetime
     published_at: datetime | None
     author: AuthorPublic
+    publication_id: UUID | None = None
+    editorial_status: EditorialStatus | None = None
     category: CategoryBrief | None = None
     tags: list[TagBrief] = Field(default_factory=list)
     featured_image_media: FeaturedImageRead | None = None

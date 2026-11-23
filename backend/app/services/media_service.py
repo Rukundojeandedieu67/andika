@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ from app.models.media import (
     MediaVariantKind,
     StorageProvider,
 )
-from app.models.post import Post, PostStatus
+from app.models.post import Post
 from app.models.user import User, UserRole
 from app.repositories.media_repository import MediaRepository
 from app.schemas.media import MediaUpdate
@@ -268,7 +268,7 @@ def can_deliver(session: Session, media: Media, actor: User | None) -> bool:
         actor.role is UserRole.ADMIN or actor.id == media.owner_id
     ):
         return True
-    return _is_published(session, media.id)
+    return _is_published(session, media.id) or _is_public_branding(session, media.id)
 
 
 def variant_for(media: Media, kind: str) -> MediaVariant | None:
@@ -293,14 +293,34 @@ def _is_referenced(session: Session, media_id: uuid.UUID) -> bool:
 
 
 def _is_published(session: Session, media_id: uuid.UUID) -> bool:
-    found = session.scalar(
-        select(Post.id)
-        .where(
+    from app.services.visibility import is_publicly_listed
+
+    posts = session.scalars(
+        select(Post).where(
             Post.featured_image_id == media_id,
-            Post.status == PostStatus.PUBLISHED,
             Post.deleted_at.is_(None),
         )
-        .limit(1)
+    ).all()
+    return any(is_publicly_listed(session, post) for post in posts)
+
+
+def _is_public_branding(session: Session, media_id: uuid.UUID) -> bool:
+    from app.models.publication import (
+        Publication,
+        PublicationStatus,
+        PublicationVisibility,
+    )
+
+    found = session.scalar(
+        select(Publication.id).where(
+            Publication.deleted_at.is_(None),
+            Publication.status == PublicationStatus.ACTIVE,
+            Publication.visibility == PublicationVisibility.PUBLIC,
+            or_(
+                Publication.logo_media_id == media_id,
+                Publication.cover_media_id == media_id,
+            ),
+        )
     )
     return found is not None
 

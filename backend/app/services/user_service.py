@@ -11,6 +11,7 @@ from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserUpdate
 from app.services.exceptions import ConflictError
+from app.services.search_text import refresh_for_author
 
 
 def update_profile(session: Session, user: User, payload: UserUpdate) -> User:
@@ -39,4 +40,6 @@ def update_profile(session: Session, user: User, payload: UserUpdate) -> User:
     except IntegrityError as exc:
         session.rollback()
         raise ConflictError("That username is already in use.") from exc
+    if "username" in changes or "full_name" in changes:
+        refresh_for_author(session, user.id)
     return user

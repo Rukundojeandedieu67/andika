@@ -8,20 +8,32 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.editorial import EditorialStatus
 from app.models.post import Post, PostRedirect, PostStatus
 from app.models.post_revision import PostRevision
+from app.models.publication import MembershipRole, Publication
 from app.models.user import User, UserRole
 from app.repositories.post_repository import PostRepository
 from app.schemas.post import PostCreate, PostListParams, PostUpdate
 from app.services.category_service import require_assignable
+from app.services.editorial_service import record_transition
 from app.services.exceptions import ConflictError, NotFoundError, ServiceError
 from app.services.post_revision_service import (
     get_revision,
     list_revisions,
     record_previous_content,
 )
+from app.services.publication_access import (
+    EDITOR_ROLES,
+    require_active_member,
+    require_active_publication,
+    require_editor,
+    require_publication,
+)
+from app.services.search_text import assign_search_document
 from app.services.slug import slugify, with_suffix
 from app.services.tag_service import require_tags
+from app.services.visibility import is_publicly_listed
 
 _CONTENT_FIELDS = {"title", "excerpt", "content"}
 
@@ -38,9 +50,14 @@ def reading_time_minutes(content: str) -> int:
 def create_draft(session: Session, author: User, payload: PostCreate) -> Post:
     """Create a draft owned by the authenticated author."""
 
+    if payload.author_id is not None:
+        raise ServiceError("You do not have permission to perform this action.", 403)
+    publication = _publication_for_new_article(session, author, payload.publication_id)
     posts = PostRepository(session)
     post = Post(
         author_id=author.id,
+        publication_id=None if publication is None else publication.id,
+        editorial_status=None if publication is None else EditorialStatus.DRAFT,
         title=payload.title,
         slug=_allocate_slug(posts, payload.title),
         subtitle=payload.subtitle,
@@ -71,6 +88,9 @@ def create_draft(session: Session, author: User, payload: PostCreate) -> Post:
         category_set=True,
         tags_set=True,
     )
+    post.author = author
+    post.publication = publication
+    assign_search_document(post)
     try:
         return posts.add(post)
     except IntegrityError as exc:
@@ -103,13 +123,13 @@ def get_published_by_slug(session: Session, slug: str) -> Post | str:
 
     posts = PostRepository(session)
     post = posts.get_by_slug(slug)
-    if _is_public(post):
+    if is_publicly_listed(session, post):
         return post
     redirect = posts.get_redirect(slug)
     if redirect is None:
         raise NotFoundError()
     current = posts.get(redirect.post_id)
-    if not _is_public(current):
+    if not is_publicly_listed(session, current):
         raise NotFoundError()
     return current.slug
 
@@ -179,6 +199,7 @@ def update_post(
         )
     post.reading_time = reading_time_minutes(post.content)
     post.updated_at = datetime.now(UTC)
+    assign_search_document(post)
     _flush(session)
     return post
 
@@ -186,7 +207,11 @@ def update_post(
 def publish_post(session: Session, post_id: uuid.UUID, actor: User) -> Post:
     """Move a draft to the public state and record the publication time."""
 
-    post = get_editable_post(session, post_id, actor, lock=True)
+    post = _existing_post(session, post_id, lock=True)
+    if post.publication_id is None:
+        _require_independent_editor(post, actor)
+    else:
+        _require_publication_publisher(session, post, actor)
     if post.status is not PostStatus.DRAFT:
         raise ConflictError("Only a draft can be published.")
     if post.content.strip() == "":
@@ -195,6 +220,17 @@ def publish_post(session: Session, post_id: uuid.UUID, actor: User) -> Post:
     post.status = PostStatus.PUBLISHED
     post.published_at = now
     post.updated_at = now
+    if post.publication_id is not None:
+        previous = post.editorial_status
+        post.editorial_status = EditorialStatus.PUBLISHED
+        record_transition(
+            session,
+            post=post,
+            actor=actor,
+            action="publish",
+            from_status=previous,
+            to_status=EditorialStatus.PUBLISHED,
+        )
     _flush(session)
     return post
 
@@ -202,12 +238,24 @@ def publish_post(session: Session, post_id: uuid.UUID, actor: User) -> Post:
 def unpublish_post(session: Session, post_id: uuid.UUID, actor: User) -> Post:
     """Return a published article to draft. It leaves public listings."""
 
-    post = get_editable_post(session, post_id, actor, lock=True)
+    post = _existing_post(session, post_id, lock=True)
+    _require_unpublish(session, post, actor)
     if post.status is not PostStatus.PUBLISHED:
         raise ConflictError("Only a published article can be unpublished.")
+    previous = post.editorial_status
     post.status = PostStatus.DRAFT
     post.published_at = None
     post.updated_at = datetime.now(UTC)
+    if post.publication_id is not None:
+        post.editorial_status = EditorialStatus.APPROVED
+        record_transition(
+            session,
+            post=post,
+            actor=actor,
+            action="unpublish",
+            from_status=previous,
+            to_status=EditorialStatus.APPROVED,
+        )
     _flush(session)
     return post
 
@@ -215,13 +263,23 @@ def unpublish_post(session: Session, post_id: uuid.UUID, actor: User) -> Post:
 def archive_post(session: Session, post_id: uuid.UUID, actor: User) -> Post:
     """Hide an article from the public without deleting it."""
 
-    post = get_editable_post(session, post_id, actor, lock=True)
+    post = _existing_post(session, post_id, lock=True)
+    _require_edit(session, post, actor)
     if post.status is PostStatus.ARCHIVED:
         raise ConflictError("That article is already archived.")
     now = datetime.now(UTC)
     post.status = PostStatus.ARCHIVED
     post.published_at = None
     post.updated_at = now
+    if post.publication_id is not None and post.editorial_status is not None:
+        record_transition(
+            session,
+            post=post,
+            actor=actor,
+            action="archive",
+            from_status=post.editorial_status,
+            to_status=post.editorial_status,
+        )
     _flush(session)
     return post
 
@@ -259,22 +317,85 @@ def get_post_revision(
 def get_editable_post(
     session: Session, post_id: uuid.UUID, actor: User, *, lock: bool = False
 ) -> Post:
-    """Return an article the actor owns, or any article when the actor is an administrator."""
+    """Return an article the actor is allowed to edit."""
 
+    post = _existing_post(session, post_id, lock=lock)
+    _require_edit(session, post, actor)
+    return post
+
+
+def _existing_post(session: Session, post_id: uuid.UUID, *, lock: bool) -> Post:
     post = PostRepository(session).get(post_id, lock=lock)
     if post is None or post.deleted_at is not None:
-        raise NotFoundError()
-    if actor.role is not UserRole.ADMIN and post.author_id != actor.id:
         raise NotFoundError()
     return post
 
 
-def _is_public(post: Post | None) -> bool:
-    return (
-        post is not None
-        and post.deleted_at is None
-        and post.status is PostStatus.PUBLISHED
-    )
+def _publication_for_new_article(
+    session: Session, author: User, publication_id: uuid.UUID | None
+) -> Publication | None:
+    if publication_id is None:
+        if author.role not in {UserRole.AUTHOR, UserRole.ADMIN}:
+            raise ServiceError("You do not have permission to perform this action.", 403)
+        return None
+    publication = require_publication(session, publication_id)
+    require_active_publication(publication)
+    require_active_member(session, publication, author)
+    return publication
+
+
+def _require_independent_editor(post: Post, actor: User) -> None:
+    if actor.role is UserRole.ADMIN or post.author_id == actor.id:
+        return
+    raise NotFoundError()
+
+
+def _require_edit(session: Session, post: Post, actor: User) -> None:
+    if post.publication_id is None:
+        _require_independent_editor(post, actor)
+        return
+    publication = require_publication(session, post.publication_id)
+    membership = require_active_member(session, publication, actor)
+    if membership.role in EDITOR_ROLES:
+        return
+    if post.author_id != actor.id:
+        raise ServiceError("You can only edit your own articles in this publication.", 403)
+    if post.status is not PostStatus.DRAFT:
+        raise ServiceError("You can only edit your own drafts in this publication.", 403)
+    if membership.role is MembershipRole.CONTRIBUTOR and post.editorial_status not in {
+        EditorialStatus.DRAFT,
+        EditorialStatus.CHANGES_REQUESTED,
+    }:
+        raise ServiceError(
+            "Contributors can edit drafts and articles that need changes.", 403
+        )
+
+
+def _require_unpublish(session: Session, post: Post, actor: User) -> None:
+    if post.publication_id is None:
+        _require_independent_editor(post, actor)
+        return
+    publication = require_publication(session, post.publication_id)
+    require_active_publication(publication)
+    membership = require_active_member(session, publication, actor)
+    require_editor(membership)
+
+
+def _require_publication_publisher(session: Session, post: Post, actor: User) -> None:
+    publication = require_publication(session, post.publication_id)  # type: ignore[arg-type]
+    require_active_publication(publication)
+    membership = require_active_member(session, publication, actor)
+    if publication.requires_review:
+        if membership.role not in EDITOR_ROLES:
+            raise ServiceError("Publication articles are published by an editor.", 403)
+        if post.editorial_status is not EditorialStatus.APPROVED:
+            raise ConflictError("This article has not been approved for publication.")
+        return
+    if membership.role in EDITOR_ROLES:
+        return
+    if membership.role is MembershipRole.AUTHOR and post.author_id == actor.id:
+        return
+    raise ServiceError("You do not have permission to publish this article.", 403)
 
 
 def _allocate_slug(

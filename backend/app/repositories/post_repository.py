@@ -7,8 +7,10 @@ import uuid
 from sqlalchemy import ColumnElement, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.models.editorial import EditorialStatus
 from app.models.media import Media
 from app.models.post import Post, PostRedirect, PostStatus
+from app.models.publication import Publication, PublicationStatus, PublicationVisibility
 from app.models.tag import Tag
 from app.schemas.post import PostListParams
 
@@ -69,9 +71,40 @@ class PostRepository:
         clauses = [
             Post.status == PostStatus.PUBLISHED,
             Post.deleted_at.is_(None),
+            self._public_publication_clause(),
             *self._common_clauses(params),
         ]
         return self._page(clauses, params, Post.published_at.desc(), Post.id.desc())
+
+    def list_for_publication(
+        self, publication_id: uuid.UUID, params: PostListParams
+    ) -> tuple[list[Post], int]:
+        clauses = [
+            Post.publication_id == publication_id,
+            Post.status == PostStatus.PUBLISHED,
+            Post.deleted_at.is_(None),
+            *self._common_clauses(params),
+        ]
+        return self._page(clauses, params, Post.published_at.desc(), Post.id.desc())
+
+    def list_editorial(
+        self,
+        publication_id: uuid.UUID,
+        params: PostListParams,
+        *,
+        author_id: uuid.UUID | None,
+        statuses: list[EditorialStatus] | None,
+    ) -> tuple[list[Post], int]:
+        clauses: list[ColumnElement[bool]] = [
+            Post.publication_id == publication_id,
+            Post.deleted_at.is_(None),
+            *self._common_clauses(params),
+        ]
+        if author_id is not None:
+            clauses.append(Post.author_id == author_id)
+        if statuses:
+            clauses.append(Post.editorial_status.in_(statuses))
+        return self._page(clauses, params, Post.updated_at.desc(), Post.id.desc())
 
     def list_for_author(
         self, author_id: uuid.UUID, params: PostListParams
@@ -119,6 +152,14 @@ class PostRepository:
                 )
             )
         return clauses
+
+    def _public_publication_clause(self) -> ColumnElement[bool]:
+        visible = select(Publication.id).where(
+            Publication.deleted_at.is_(None),
+            Publication.status == PublicationStatus.ACTIVE,
+            Publication.visibility == PublicationVisibility.PUBLIC,
+        )
+        return or_(Post.publication_id.is_(None), Post.publication_id.in_(visible))
 
     def _page(
         self,

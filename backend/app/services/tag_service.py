@@ -12,6 +12,7 @@ from app.models.tag import Tag
 from app.repositories.tag_repository import TagRepository
 from app.schemas.tag import TagCreate, TagUpdate
 from app.services.exceptions import ConflictError, NotFoundError
+from app.services.search_text import refresh_for_tag
 from app.services.slug import slugify, with_suffix
 
 
@@ -45,7 +46,10 @@ def update_tag(session: Session, tag_id: uuid.UUID, payload: TagUpdate) -> Tag:
     if "description" in changes:
         tag.description = changes["description"]
     tag.updated_at = datetime.now(UTC)
-    return _save(session, tags, tag)
+    saved = _save(session, tags, tag)
+    if "name" in changes and changes["name"] is not None:
+        refresh_for_tag(session, saved.id)
+    return saved
 
 
 def delete_tag(session: Session, tag_id: uuid.UUID) -> None:

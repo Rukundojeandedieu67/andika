@@ -69,6 +69,10 @@ _resend_verification = RateLimiter(limit=3, window_seconds=60 * 60)
 _media_upload = RateLimiter(limit=20, window_seconds=60 * 60)
 _comments = RateLimiter(limit=300, window_seconds=60 * 60)
 _reports = RateLimiter(limit=100, window_seconds=60 * 60)
+_invitations = RateLimiter(limit=100, window_seconds=60 * 60)
+_invitation_accepts = RateLimiter(limit=100, window_seconds=60 * 60)
+_suggestions = RateLimiter(limit=300, window_seconds=60 * 60)
+_notifications = RateLimiter(limit=120, window_seconds=60 * 60)
 
 
 def _client_key(request: Request, scope: str) -> str:
@@ -153,6 +157,50 @@ def limit_reports(settings: Settings, user_id: str) -> None:
         _reports,
         f"reports:{user_id}",
         limit=settings.report_rate_limit_per_hour,
+    )
+
+
+def limit_invitations(settings: Settings, user_id: str) -> None:
+    """Limit new publication invitations for one account."""
+
+    _limited(
+        settings,
+        _invitations,
+        f"invitations:{user_id}",
+        limit=settings.invitation_rate_limit_per_hour,
+    )
+
+
+def limit_invitation_accepts(settings: Settings, user_id: str) -> None:
+    """Limit invitation acceptance attempts for one account."""
+
+    _limited(
+        settings,
+        _invitation_accepts,
+        f"invitation-accept:{user_id}",
+        limit=settings.invitation_accept_rate_limit_per_hour,
+    )
+
+
+def limit_suggestions(settings: Settings, request: Request) -> None:
+    """Limit search suggestions for one client address."""
+
+    _limited(
+        settings,
+        _suggestions,
+        _client_key(request, "suggestions"),
+        limit=settings.suggestion_rate_limit_per_hour,
+    )
+
+
+def limit_notification_writes(settings: Settings, user_id: str) -> None:
+    """Limit notification changes for one account."""
+
+    _limited(
+        settings,
+        _notifications,
+        f"notifications:{user_id}",
+        limit=settings.notification_rate_limit_per_hour,
     )
 
 
