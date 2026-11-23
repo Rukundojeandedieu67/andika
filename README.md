@@ -1,6 +1,6 @@
 # ANDIKA
 
-ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, and media.
+ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, media, and comments.
 
 The API is a FastAPI application backed by PostgreSQL. Interactive documentation is served at `/docs` once the server is running.
 
@@ -14,9 +14,10 @@ The API is a FastAPI application backed by PostgreSQL. Interactive documentation
 - Revision history for article content
 - Global categories, reusable tags, and article discovery by category or tag
 - Image uploads, WebP variants, and featured images on articles
+- Threaded comments, reports, and moderation
 - Role checks for readers, verified authors, and verified administrators
 
-Comments, subscriptions, and the frontend are not part of this stage.
+Subscriptions and the frontend are not part of this stage.
 
 ## Stack
 
@@ -187,6 +188,52 @@ Media routes:
 - `GET /api/v1/media/{media_id}/files/{variant}`
 - `GET /api/v1/media/admin/all`
 - `DELETE /api/v1/media/admin/{media_id}`
+
+## Comments
+
+Signed-in readers, authors, and administrators can comment on a published article when `allow_comments` is true. Drafts, archived articles, and deleted articles do not accept comments, and their discussions are not public.
+
+A comment is either a root comment or a reply to a root comment. Replies cannot contain further replies, and a reply must belong to the same article as its parent. Only an approved comment can be replied to.
+
+Verified accounts are approved immediately. Unverified accounts stay `pending` until the article's author or an administrator approves them. `hidden` and `rejected` comments are kept, but they are not public. A rejected comment is never published on its own.
+
+Comment text is stored as plain text. HTML tags are removed, whitespace is collapsed, and an empty result is rejected. The default maximum length is 2,000 characters. New comments are limited to 30 per account per hour, and reports to 10 per hour, while `AUTH_RATE_LIMIT_ENABLED` is true. Posting the same body again on the same thread is rejected.
+
+Deleting a comment hides its text and keeps the author. If that comment has public replies, the thread shows "This comment was removed." and the replies stay. The public list returns approved threads only and does not include moderation status.
+
+The article's author can approve a pending comment, hide one, or restore a hidden one. An author cannot reject comments and cannot moderate another author's article. Administrators can approve, hide, reject, and restore comments across the platform. Every status change is written to an audit log that ordinary users cannot edit.
+
+Anyone signed in can report an approved comment. Reasons are spam, harassment, hate speech, misinformation, inappropriate content, and other. The same person cannot report the same comment twice. A report does not delete the comment. Reporter email addresses are not returned.
+
+```http
+POST /api/v1/posts/<post uuid>/comments
+{"body": "This is a clear and useful note."}
+
+POST /api/v1/posts/<post uuid>/comments/<comment uuid>/replies
+{"body": "I agree, with one addition."}
+
+POST /api/v1/comments/<comment uuid>/report
+{"reason": "spam", "description": "Repeated promotion"}
+```
+
+Comment routes:
+
+- `GET /api/v1/posts/{post_id}/comments`
+- `POST /api/v1/posts/{post_id}/comments`
+- `POST /api/v1/posts/{post_id}/comments/{comment_id}/replies`
+- `GET /api/v1/comments/mine`
+- `PATCH /api/v1/comments/{comment_id}`
+- `DELETE /api/v1/comments/{comment_id}`
+- `POST /api/v1/comments/{comment_id}/report`
+- `GET /api/v1/posts/{post_id}/moderation/comments`
+- `PATCH /api/v1/posts/{post_id}/moderation/comments/{comment_id}/status`
+- `GET /api/v1/posts/{post_id}/moderation/reports`
+- `PATCH /api/v1/posts/{post_id}/moderation/reports/{report_id}`
+- `GET /api/v1/moderation/comments`
+- `PATCH /api/v1/moderation/comments/{comment_id}/status`
+- `GET /api/v1/moderation/reports`
+- `PATCH /api/v1/moderation/reports/{report_id}`
+- `GET /api/v1/moderation/logs`
 
 ## Tests
 

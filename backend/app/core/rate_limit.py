@@ -34,14 +34,15 @@ class RateLimiter:
         self._lock = threading.Lock()
         _LIMITERS.append(self)
 
-    def check(self, key: str) -> None:
+    def check(self, key: str, *, limit: int | None = None) -> None:
+        effective_limit = self.limit if limit is None else limit
         now = time.monotonic()
         with self._lock:
             hits = self._hits[key]
             cutoff = now - self.window_seconds
             while hits and hits[0] <= cutoff:
                 hits.popleft()
-            if len(hits) >= self.limit:
+            if len(hits) >= effective_limit:
                 retry_after = max(1, int(self.window_seconds - (now - hits[0])))
                 raise RateLimitExceeded(retry_after)
             hits.append(now)
@@ -66,6 +67,8 @@ _reset_password = RateLimiter(limit=10, window_seconds=60 * 60)
 _verify_email = RateLimiter(limit=10, window_seconds=60 * 60)
 _resend_verification = RateLimiter(limit=3, window_seconds=60 * 60)
 _media_upload = RateLimiter(limit=20, window_seconds=60 * 60)
+_comments = RateLimiter(limit=300, window_seconds=60 * 60)
+_reports = RateLimiter(limit=100, window_seconds=60 * 60)
 
 
 def _client_key(request: Request, scope: str) -> str:
@@ -123,6 +126,41 @@ def limit_media_upload(settings: Settings, user_id: str) -> None:
         return
     try:
         _media_upload.check(f"media-upload:{user_id}")
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Try again later.",
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+
+
+def limit_comments(settings: Settings, user_id: str) -> None:
+    """Limit new comments and replies for one account."""
+
+    _limited(
+        settings,
+        _comments,
+        f"comments:{user_id}",
+        limit=settings.comment_rate_limit_per_hour,
+    )
+
+
+def limit_reports(settings: Settings, user_id: str) -> None:
+    """Limit comment reports for one account."""
+
+    _limited(
+        settings,
+        _reports,
+        f"reports:{user_id}",
+        limit=settings.report_rate_limit_per_hour,
+    )
+
+
+def _limited(settings: Settings, limiter: RateLimiter, key: str, *, limit: int) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    try:
+        limiter.check(key, limit=limit)
     except RateLimitExceeded as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

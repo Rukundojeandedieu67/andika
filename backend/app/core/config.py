@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = ""
     s3_public_base_url: str = ""
 
+    comment_max_length: int = Field(default=2000, ge=20, le=10000)
+    comment_rate_limit_per_hour: int = Field(default=30, gt=0, le=300)
+    report_rate_limit_per_hour: int = Field(default=10, gt=0, le=100)
+
     @field_validator("environment", mode="before")
     @classmethod
     def normalize_environment(cls, value: object) -> object:

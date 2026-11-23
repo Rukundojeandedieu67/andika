@@ -29,7 +29,7 @@ A Supabase PostgreSQL URL can be used instead. Keep the `postgresql+psycopg://` 
 
 ## Migrate
 
-Apply the schema, including accounts, articles, categories, tags, and media:
+Apply the schema, including accounts, articles, categories, tags, media, and comments:
 
 ```powershell
 .\.venv\Scripts\alembic.exe upgrade head
@@ -111,6 +111,14 @@ Verified authors upload JPEG, PNG, and WebP files to `POST /api/v1/media/upload`
 Authors attach their own ready images with `featured_image_id`. The older `featured_image` URL field still works. Public article responses include `featured_image_media`. A published article's image can be read without a token at `GET /api/v1/media/{media_id}/files/{variant}`. Deleting media never deletes an article. Media that an article still references cannot be removed. A failed storage delete does not mark the file as removed.
 
 Uploads are limited to 20 per account per hour when `AUTH_RATE_LIMIT_ENABLED` is true.
+
+## Comments
+
+Signed-in users can comment on a published article when comments are open. Verified accounts are approved immediately. Unverified accounts stay pending until the article author or an administrator approves them. Hidden and rejected comments stay in the database and are omitted from public threads.
+
+Threads have two levels: a root comment and replies to that root. A reply cannot contain another reply. HTML is stripped before the body is stored. The default limit is 2,000 characters (`COMMENT_MAX_LENGTH`). Duplicate text from the same person on the same thread is rejected. Comment creation is limited to `COMMENT_RATE_LIMIT_PER_HOUR` (30) and reports to `REPORT_RATE_LIMIT_PER_HOUR` (10) while rate limiting is enabled.
+
+Soft-deleting a comment hides its text. Public replies remain under the placeholder "This comment was removed." The article author can approve, hide, and restore comments on that article only. Administrators can also reject comments. Each decision is appended to `moderation_logs`. Reports do not delete comments, and a person can report a comment only once.
 
 ## Test
 
