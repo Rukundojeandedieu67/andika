@@ -57,6 +57,18 @@ class Post(Base):
             name="editorial_status",
         ),
         Index("ix_posts_status_published_at", "status", "published_at"),
+        Index(
+            "ix_posts_author_status_published_at",
+            "author_id",
+            "status",
+            "published_at",
+        ),
+        Index(
+            "ix_posts_publication_status_published_at",
+            "publication_id",
+            "status",
+            "published_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

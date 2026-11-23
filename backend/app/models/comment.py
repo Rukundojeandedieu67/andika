@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Text, Uuid
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -34,6 +34,13 @@ class Comment(Base):
             name="status",
         ),
         Index("ix_comments_post_id_created_at", "post_id", "created_at"),
+        Index(
+            "ix_comments_approved_created_at",
+            "status",
+            "created_at",
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

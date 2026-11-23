@@ -184,6 +184,20 @@ In-app and email switches are separate for comments, publications, editorial upd
 
 `GET /api/v1/notifications/admin/delivery` is limited to administrators and omits addresses and message bodies. Notification writes are limited to `NOTIFICATION_RATE_LIMIT_PER_HOUR` (60) while rate limiting is enabled.
 
+## Analytics
+
+Reports aggregate `posts`, `article_views`, `comments`, `users`, `publications`, and `publication_memberships` in SQL. They do not read search events or notification deliveries, and they do not cache totals. Draft, archived, and deleted articles are excluded. Only approved comments that are still present are counted.
+
+Dates are UTC. Weeks start on Monday and months on the first day. The default window is the last 30 days. A midnight `date_to` includes that UTC day. The maximum window is 366 days. `compare=true` starts one window-length before `date_from` and ends one microsecond before it. Empty days, weeks, and months are zero-filled.
+
+`engagement_rate` is approved comments divided by views, multiplied by 100, or 0 when views are 0. Views are stored read events, not unique readers. The view endpoint already drops owner self-views, duplicates inside `VIEW_DEDUP_HOURS`, health-check clients, and articles that are not publicly listed.
+
+Author routes require a verified account and always use the caller's articles. Publication owners and editors see the publication's published articles. Authors and contributors see only their own articles in that publication. Suspended and removed members are rejected. A platform administrator does not gain publication analytics by role. Admin routes require a platform administrator. An active user is an active account that signed in during the window.
+
+CSV routes stream `text/csv`, prefix formula-like cells with a quote, and stop author or publication files at 5,000 rows. They do not include email addresses or visitor hashes.
+
+Migration `a9d4c2e81b37` adds the reporting indexes on top of `f8b1d4c62a90`.
+
 ## Test
 
 ```powershell

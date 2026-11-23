@@ -1,6 +1,6 @@
 # ANDIKA
 
-ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, media, comments, publications, search, and notifications.
+ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, media, comments, publications, search, notifications, and analytics.
 
 The API is a FastAPI application backed by PostgreSQL. Interactive documentation is served at `/docs` once the server is running.
 
@@ -18,6 +18,7 @@ The API is a FastAPI application backed by PostgreSQL. Interactive documentation
 - Publications with membership roles, invitations, and editorial review
 - Public search, discovery feeds, related articles, suggestions, and view counts
 - Private in-app notifications and preference-controlled email delivery
+- Analytics for authors, publications, and administrators, including CSV export
 - Role checks for readers, verified authors, and verified administrators
 
 Subscriptions and the frontend are not part of this stage.
@@ -364,6 +365,41 @@ GET /api/v1/notifications/admin/delivery
 ```
 
 The admin route returns delivery counts and failed job ids. It does not return addresses or message bodies.
+
+## Analytics
+
+Analytics read the records ANDIKA already stores. Article views come from `article_views`. Comments come from approved, non-deleted comments. Published articles are posts with status `published`, a publication time, and no deletion time. Search rows and notifications are not views. There is no second view counter and no cached summary table. A response describes the database at the time of the request.
+
+Every timestamp is stored in UTC, and every day, week, and month is grouped in UTC. A week starts on Monday. A month starts on the first day. If a window begins on a Wednesday, the week bucket is still labeled with that Monday, but it counts only events inside the window. Missing buckets are returned as zeros.
+
+`date_from` and `date_to` are inclusive. A `date_to` at UTC midnight includes that whole calendar day. Any other `date_to` is the exact instant. A missing offset is read as UTC. When both dates are omitted, the window is the 30 days ending now. When only one is sent, the other end is now or 30 days before `date_to`. A window longer than 366 days is rejected. `date_from` after `date_to` is rejected. `period` accepts `day`, `week`, or `month`. `compare=true` adds the preceding window. It starts one window-length before `date_from` and ends one microsecond before `date_from`, so the shared boundary is counted only in the current window.
+
+```text
+GET /api/v1/analytics/author/overview
+GET /api/v1/analytics/author/articles?sort=views&page=1
+GET /api/v1/analytics/author/timeseries?period=week
+GET /api/v1/analytics/author/export
+GET /api/v1/analytics/publications/{publication_id}/overview
+GET /api/v1/analytics/publications/{publication_id}/articles
+GET /api/v1/analytics/publications/{publication_id}/authors
+GET /api/v1/analytics/publications/{publication_id}/export
+GET /api/v1/analytics/admin/overview
+GET /api/v1/analytics/admin/timeseries?period=month
+GET /api/v1/analytics/admin/content
+GET /api/v1/analytics/admin/export
+```
+
+An author report includes independent articles and publication articles that the signed-in user wrote. It does not accept another author's id. A verified publication writer can use it without a platform author role. Unverified accounts cannot.
+
+Publication owners and editors see that publication's published articles, not the members' independent articles. Authors and contributors see only the articles they wrote there. Publications do not have a separate analytics permission, so contributors are not given the full report. Suspended and removed members are denied. Non-members, including a platform administrator who is not a member, receive the same not-found response as for a missing publication. A private publication stays available to its owner and editors and is hidden from everyone else.
+
+The administrator report counts registered users, publications, published articles, views, and approved comments. An active user is an active account whose last sign-in falls in the selected window. That is not a reader count. Content is split into independent articles, articles in active public publications, and a count for everything else. The ranked list contains at most 10 publicly listed articles that were viewed in the window. Private titles are not included.
+
+`engagement_rate = (approved_comments / views) * 100`. Zero views produce `0`, not an error. `average_views_per_article` divides all-time views by the number of currently published articles, and is `0` when that number is `0`. Article lists and exports count views and comments inside the selected window. Overview totals are all-time. Views are events. They are not unique readers. Owner self-views, repeats inside the deduplication window, health-check clients, and articles that are not publicly listed are never stored, so those reads stay at zero. Returning readership is omitted because the visitor hash must not be exposed and bot filtering is incomplete. Unpublishing an article removes it from later reports.
+
+CSV exports use the same permission rules. The file is `text/csv` with `Content-Disposition` and `Cache-Control: no-store`. Author and publication exports contain at most 5,000 articles; `X-Andika-Export-Truncated` says whether the file stopped early. Cells that start with `=`, `+`, `-`, `@`, a tab, or a carriage return are prefixed with a quote. Exports omit email addresses, visitor hashes, invitation tokens, and notification bodies. The admin file is the content summary plus the public ranking, not a user directory.
+
+The migration `a9d4c2e81b37` adds indexes for these filters. It does not copy or rewrite existing rows.
 
 ## Tests
 

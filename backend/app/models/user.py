@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, Enum, String, Uuid
+from sqlalchemy import Boolean, CheckConstraint, Enum, Index, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -35,6 +35,8 @@ class User(Base):
             "role IN ('reader', 'author', 'administrator')",
             name="role",
         ),
+        Index("ix_users_created_at", "created_at"),
+        Index("ix_users_last_login_at", "last_login_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

@@ -91,6 +91,7 @@ class Publication(Base):
             "status IN ('active', 'suspended', 'archived')",
             name="status",
         ),
+        Index("ix_publications_created_at", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

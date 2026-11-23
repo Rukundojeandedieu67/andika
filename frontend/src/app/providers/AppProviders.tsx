@@ -1,0 +1,19 @@
+import type { ReactNode } from "react"
+import { QueryClientProvider } from "@tanstack/react-query"
+import { Toaster } from "sonner"
+import { AuthProvider } from "@/app/providers/AuthProvider"
+import { ThemeProvider } from "@/app/providers/ThemeProvider"
+import { queryClient } from "@/lib/query-client"
+
+export function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          {children}
+          <Toaster position="top-right" richColors closeButton />
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  )
+}
