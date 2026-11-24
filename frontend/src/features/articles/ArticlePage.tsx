@@ -177,7 +177,7 @@ function CommentThread({ comment, postId }: { comment: CommentRead; postId: stri
           <>
             <button type="button" onClick={() => setEditing((value) => !value)}>Edit</button>
             {editing ? <button type="button" onClick={() => save.mutate()}>Save</button> : null}
-            <button type="button" onClick={() => remove.mutate()}>Delete</button>
+            <button type="button" onClick={() => { if (window.confirm("Delete this comment?")) remove.mutate() }}>Delete</button>
           </>
         ) : null}
         {user ? (

@@ -142,12 +142,8 @@ export function EditorPage() {
   })
   const publicationRole = membership.data?.caller_role
   const isArticleAuthor = Boolean(user && post && post.author.id === user.id)
-  useEffect(() => {
-    if (!isNew || !publicationHint || draft.publication_id) return
-    const match = publications.data?.items.find((item) => item.id === publicationHint && item.membership_status === "active")
-    if (!match) return
-    setDraft((current) => (current.publication_id ? current : { ...current, publication_id: match.id }))
-  }, [draft.publication_id, isNew, publicationHint, publications.data])
+  const hintedPublication = isNew && publications.data?.items.some((item) => item.id === publicationHint && item.membership_status === "active") ? publicationHint : null
+  const selectedPublication = draft.publication_id ?? hintedPublication
   function update(partial: Record<string, unknown>) {
     setDraft((current) => ({ ...current, ...partial }))
     setDirty(true)
@@ -165,7 +161,7 @@ export function EditorPage() {
     meta_title: draft.meta_title || null,
     meta_description: draft.meta_description || null,
     featured_image_id: draft.featured_image_media?.id || null,
-    publication_id: isNew ? draft.publication_id || null : undefined,
+    publication_id: isNew ? selectedPublication || null : undefined,
   })
   async function save(event?: FormEvent) {
     event?.preventDefault()
@@ -290,7 +286,7 @@ export function EditorPage() {
           </Field>
           {isNew ? (
             <Field label="Publication" htmlFor="publication" hint="Leave empty for an independent article. Readers who are publication members must choose a publication.">
-              <Select id="publication" value={draft.publication_id ?? ""} onChange={(event) => update({ publication_id: event.target.value || null })}>
+              <Select id="publication" value={selectedPublication ?? ""} onChange={(event) => update({ publication_id: event.target.value || null })}>
                 <option value="">Independent</option>
                 {publications.data?.items.filter((item) => item.membership_status === "active").map((item) => (
                   <option key={item.id} value={item.id}>{item.name} · {item.role}</option>

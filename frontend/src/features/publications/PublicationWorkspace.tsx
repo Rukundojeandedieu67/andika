@@ -2,12 +2,15 @@ import { useState, type FormEvent } from "react"
 import { Link, useNavigate, useParams } from "react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { useAuth } from "@/hooks/useAuth"
 import { Button } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
 import { Input } from "@/components/ui/Input"
 import { Select } from "@/components/ui/Select"
 import { Textarea } from "@/components/ui/Textarea"
 import { toApiError } from "@/lib/errors"
+import { canInviteRole, canRevokeInvitation } from "@/features/publications/publication-desk"
 import { formatDateTime } from "@/lib/format"
 import {
   archivePublication,
@@ -39,13 +42,19 @@ import type { AnalyticsQuery } from "@/services/analytics"
 import { formatNumber, formatRate } from "@/lib/format"
 
 export function MyPublicationsPage() {
-  const query = useQuery({ queryKey: ["my-publications"], queryFn: () => myPublications(1) })
+  const { user } = useAuth()
+  const query = useQuery({
+    queryKey: ["my-publications"],
+    queryFn: () => myPublications(1),
+    enabled: Boolean(user?.is_verified),
+  })
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-4xl">Publications</h2>
-        <Link to="/workspace/publications/new" className="rounded-full bg-brand px-4 py-2 text-paper-raised">New publication</Link>
+        {user?.is_verified ? <Link to="/workspace/publications/new" className="rounded-full bg-brand px-4 py-2 text-paper-raised">New publication</Link> : null}
       </div>
+      {user && !user.is_verified ? <p className="mt-4 text-sm text-ink-soft">Verify your email before creating or managing a publication.</p> : null}
       <div className="mt-6 grid gap-3">
         {query.data?.items.map((item) => (
           <Link key={item.id} to={`/workspace/publications/${item.id}`} className="rounded-2xl border border-line px-4 py-3">
@@ -53,12 +62,14 @@ export function MyPublicationsPage() {
           </Link>
         ))}
       </div>
+      {query.data && query.data.items.length === 0 ? <EmptyState title="No publications" body="A verified account can create one. You become its owner." /> : null}
       {query.error ? <p className="mt-4 text-sm">{toApiError(query.error).message}</p> : null}
     </div>
   )
 }
 
 export function NewPublicationPage() {
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -73,9 +84,11 @@ export function NewPublicationPage() {
       toast.error(toApiError(error).message)
     }
   }
+  if (!user?.is_verified) return <p>Verify your email before creating a publication. Creating one does not change your platform role.</p>
   return (
     <form className="grid max-w-xl gap-4" onSubmit={submit}>
       <h2 className="font-display text-4xl">New publication</h2>
+      <p className="text-sm text-ink-soft">You become the owner. Review is required until you turn it off.</p>
       <Field label="Name" htmlFor="name"><Input id="name" required value={name} onChange={(event) => setName(event.target.value)} /></Field>
       <Field label="Description" htmlFor="description"><Textarea id="description" value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
       <Field label="Visibility" htmlFor="visibility">
@@ -108,12 +121,14 @@ export function PublicationManagePage() {
   const isEditor = role === "editor" || isOwner
   const [email, setEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<InviteRole>("author")
-  const [description, setDescription] = useState("")
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["publication-manage", id] })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["publication-manage", id] })
+    void queryClient.invalidateQueries({ queryKey: ["members", id] })
+    void queryClient.invalidateQueries({ queryKey: ["audit", id] })
+  }
   if (manage.isLoading) return <div className="h-40 animate-pulse rounded-3xl bg-line" />
   if (manage.error || !publication) return <p>{toApiError(manage.error).message}</p>
-  const inviteRoles: InviteRole[] = isOwner ? ["editor", "author", "contributor"] : ["author", "contributor"]
-  const canInvite = isOwner || (role === "editor" && publication.editors_can_invite)
+  const inviteRoles = canInviteRole(role, publication.editors_can_invite)
   return (
     <div className="grid gap-8">
       <div>
@@ -122,22 +137,48 @@ export function PublicationManagePage() {
         <Link to={`/publications/${publication.slug}`} className="text-sm text-brand">Public page</Link>
       </div>
       {isEditor ? (
-        <form className="grid gap-3" onSubmit={(event) => {
+        <form className="grid gap-3" key={`${publication.id}:${publication.status}:${publication.requires_review}`} onSubmit={(event) => {
           event.preventDefault()
+          const form = new FormData(event.currentTarget)
+          const description = String(form.get("description") ?? "")
           const fields = isOwner
-            ? { description: description || publication.description, requires_review: publication.requires_review }
-            : { description: description || publication.description }
+            ? {
+                name: String(form.get("name") ?? ""),
+                description: description || null,
+                website_url: String(form.get("website") ?? "") || null,
+                contact_email: String(form.get("contact") ?? "") || null,
+                visibility: String(form.get("visibility") ?? publication.visibility),
+                requires_review: form.get("requires_review") === "on",
+                editors_can_invite: form.get("editors_can_invite") === "on",
+              }
+            : {
+                description: description || null,
+                website_url: String(form.get("website") ?? "") || null,
+                contact_email: String(form.get("contact") ?? "") || null,
+              }
           updatePublication(id, fields).then(() => { toast.success("Settings saved."); refresh() }).catch((error: unknown) => toast.error(toApiError(error).message))
         }}>
-          <Field label="Description" htmlFor="description"><Textarea id="description" defaultValue={publication.description ?? ""} onChange={(event) => setDescription(event.target.value)} /></Field>
+          {isOwner ? <Field label="Name" htmlFor="pub-name"><Input id="pub-name" name="name" required defaultValue={publication.name} /></Field> : null}
+          <Field label="Description" htmlFor="description"><Textarea id="description" name="description" defaultValue={publication.description ?? ""} /></Field>
+          <Field label="Website" htmlFor="website"><Input id="website" name="website" defaultValue={publication.website_url ?? ""} placeholder="https://" /></Field>
+          <Field label="Contact email" htmlFor="contact"><Input id="contact" name="contact" type="email" defaultValue={publication.contact_email ?? ""} /></Field>
           {isOwner ? (
-            <label className="text-sm"><input type="checkbox" defaultChecked={publication.requires_review} onChange={(event) => updatePublication(id, { requires_review: event.target.checked }).then(refresh)} /> Require editorial review</label>
+            <>
+              <Field label="Visibility" htmlFor="pub-visibility">
+                <Select id="pub-visibility" name="visibility" defaultValue={publication.visibility}>
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                </Select>
+              </Field>
+              <label className="text-sm"><input type="checkbox" name="requires_review" defaultChecked={publication.requires_review} /> Require editorial review before publish</label>
+              <label className="text-sm"><input type="checkbox" name="editors_can_invite" defaultChecked={publication.editors_can_invite} /> Editors can invite authors and contributors</label>
+            </>
           ) : null}
-          <Button type="submit">Save description</Button>
+          <Button type="submit">Save settings</Button>
         </form>
-      ) : null}
-      {isOwner && publication.status === "active" ? <Button variant="secondary" onClick={() => archivePublication(id).then(refresh).catch((error: unknown) => toast.error(toApiError(error).message))}>Archive publication</Button> : null}
-      {isOwner && publication.status === "archived" ? <Button onClick={() => restorePublication(id).then(refresh).catch((error: unknown) => toast.error(toApiError(error).message))}>Restore publication</Button> : null}
+      ) : <p className="text-sm text-ink-soft">Authors and contributors can write. Owners and editors change publication settings.</p>}
+      {isOwner && publication.status === "active" ? <Button variant="secondary" onClick={() => { if (!window.confirm("Archive this publication? It leaves the public directory until you restore it.")) return; archivePublication(id).then(refresh).catch((error: unknown) => toast.error(toApiError(error).message)) }}>Archive publication</Button> : null}
+      {isOwner && publication.status === "archived" ? <Button onClick={() => { if (!window.confirm("Restore this publication?")) return; restorePublication(id).then(refresh).catch((error: unknown) => toast.error(toApiError(error).message)) }}>Restore publication</Button> : null}
       <section>
         <h3 className="font-display text-2xl">Articles</h3>
         <Link to={`/workspace/articles/new?publication=${id}`} className="text-sm text-brand">Write in this publication</Link>
@@ -148,6 +189,8 @@ export function PublicationManagePage() {
             </Link>
           ))}
         </div>
+        {posts.error ? <p className="mt-2 text-sm">{toApiError(posts.error).message}</p> : null}
+        {posts.data && posts.data.items.length === 0 ? <p className="mt-2 text-sm text-ink-soft">No articles in this publication yet.</p> : null}
       </section>
       {isEditor ? (
         <section>
@@ -155,6 +198,8 @@ export function PublicationManagePage() {
           {submissions.data?.items.map((post) => (
             <Link key={post.id} to={`/workspace/articles/${post.id}?publication=${id}`} className="mt-2 block">{post.title} · {post.editorial_status}</Link>
           ))}
+          {submissions.data && submissions.data.items.length === 0 ? <p className="mt-2 text-sm text-ink-soft">Nothing is waiting for review.</p> : null}
+          {submissions.error ? <p className="mt-2 text-sm">{toApiError(submissions.error).message}</p> : null}
         </section>
       ) : null}
       <section>
@@ -167,15 +212,15 @@ export function PublicationManagePage() {
                 <Select aria-label={`Role for ${member.user.username}`} value={member.role} onChange={(event) => changeMemberRole(id, member.id, event.target.value).then(() => members.refetch()).catch((error: unknown) => toast.error(toApiError(error).message))}>
                   {(["editor", "author", "contributor"] as MembershipRole[]).map((value) => <option key={value} value={value}>{value}</option>)}
                 </Select>
-                {member.status === "active" ? <button type="button" onClick={() => suspendMember(id, member.id).then(() => members.refetch())}>Suspend</button> : null}
-                <button type="button" onClick={() => removeMember(id, member.id).then(() => members.refetch())}>Remove</button>
-                <button type="button" onClick={() => transferOwnership(id, member.user.id).then(refresh).catch((error: unknown) => toast.error(toApiError(error).message))}>Make owner</button>
+                {member.status === "active" ? <button type="button" onClick={() => { if (!window.confirm(`Suspend ${member.user.username}?`)) return; suspendMember(id, member.id).then(() => members.refetch()).catch((error: unknown) => toast.error(toApiError(error).message)) }}>Suspend</button> : null}
+                <button type="button" onClick={() => { if (!window.confirm(`Remove ${member.user.username} from this publication?`)) return; removeMember(id, member.id).then(() => members.refetch()).catch((error: unknown) => toast.error(toApiError(error).message)) }}>Remove</button>
+                {member.status === "active" ? <button type="button" onClick={() => { if (!window.confirm(`Transfer ownership to ${member.user.username}? You become an editor.`)) return; transferOwnership(id, member.user.id).then(refresh).catch((error: unknown) => toast.error(toApiError(error).message)) }}>Make owner</button> : null}
               </>
             ) : null}
           </div>
         ))}
       </section>
-      {canInvite ? (
+      {inviteRoles.length > 0 ? (
         <form className="flex flex-wrap gap-2" onSubmit={(event) => {
           event.preventDefault()
           inviteMember(id, email, inviteRole).then((result) => { toast.success(result.message); setEmail(""); void invitations.refetch() }).catch((error: unknown) => toast.error(toApiError(error).message))
@@ -189,7 +234,7 @@ export function PublicationManagePage() {
       ) : null}
       {invitations.data?.items.map((invitation) => (
         <p key={invitation.id} className="text-sm">{invitation.email} · {invitation.role} · {invitation.status}
-          {invitation.status === "pending" && (isOwner || (role === "editor" && invitation.role !== "editor")) ? (
+          {canRevokeInvitation(role, publication.editors_can_invite, invitation.role, invitation.status) ? (
             <button type="button" className="ml-2" onClick={() => revokeInvitation(id, invitation.id).then(() => invitations.refetch())}>Revoke</button>
           ) : null}
         </p>
@@ -206,6 +251,7 @@ export function PublicationManagePage() {
         <h3 className="font-display text-2xl">Analytics</h3>
         <p className="text-sm text-ink-soft">Active publication authors are authors of currently published articles in this scope.</p>
         <AnalyticsFilters query={analyticsQuery} onChange={setAnalyticsQuery} />
+        {overview.error ? <p className="mt-3 text-sm">{toApiError(overview.error).message}</p> : null}
         {overview.data ? <p className="mt-3">Scope {overview.data.scope}. Published {formatNumber(overview.data.published_articles)}. Period views {formatNumber(overview.data.period_views)}. Active authors {formatNumber(overview.data.active_authors)}.</p> : null}
         <table className="mt-3 w-full text-sm">
           <tbody>
