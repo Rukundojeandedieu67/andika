@@ -1,6 +1,6 @@
 # ANDIKA
 
-ANDIKA is an international blog publishing platform. This repository currently contains the backend API: accounts, sessions, articles, categories, tags, media, comments, publications, search, notifications, and analytics.
+ANDIKA is an international blog publishing platform. This repository contains the FastAPI backend and the React frontend for accounts, articles, categories, tags, media, comments, publications, search, notifications, analytics, and administration.
 
 The API is a FastAPI application backed by PostgreSQL. Interactive documentation is served at `/docs` once the server is running.
 
@@ -21,7 +21,7 @@ The API is a FastAPI application backed by PostgreSQL. Interactive documentation
 - Analytics for authors, publications, and administrators, including CSV export
 - Role checks for readers, verified authors, and verified administrators
 
-Subscriptions and the frontend are not part of this stage.
+There is no subscription product. The frontend is the React application in `frontend/`.
 
 ## Stack
 
@@ -36,6 +36,7 @@ Subscriptions and the frontend are not part of this stage.
 ```text
 andika/
 ├── README.md
+├── frontend/       React application
 └── backend/
     ├── app/            API, models, and services
     ├── alembic/        Database migrations
@@ -73,6 +74,22 @@ Create the database, apply migrations, and start the server:
 | http://127.0.0.1:8000/api/v1/health/database | Database connectivity |
 
 The process health check does not need PostgreSQL. The database check returns HTTP 503 when the database cannot be reached, without exposing credentials or SQL errors.
+
+## Run the frontend
+
+From `frontend`, with the API already running on `127.0.0.1:8000`:
+
+```powershell
+npm install
+copy .env.example .env
+npm run dev
+```
+
+Open http://localhost:5173. `VITE_API_BASE_URL` stays `/api/v1`. Vite proxies `/api` to the local API so the refresh cookie can stay SameSite=Strict. Do not point the browser at `127.0.0.1:5173` and the API base at `localhost`, or the other way around.
+
+`npm run build` writes `frontend/dist`. Serve that directory on the same origin as `/api`, or put a reverse proxy in front of both. The access token stays in memory. The refresh token is the HttpOnly cookie and must not be stored in localStorage or sessionStorage.
+
+There is no user-directory API. Administration covers platform analytics, articles, categories, tags, comments, reports, media, search totals, and email delivery counts.
 
 Startup does not create tables. Schema changes go through Alembic.
 
