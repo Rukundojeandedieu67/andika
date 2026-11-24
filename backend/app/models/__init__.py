@@ -8,6 +8,7 @@ from app.models.article_view import ArticleView
 from app.models.auth_session import AuthSession
 from app.models.auth_token import EmailVerificationToken, PasswordResetToken
 from app.models.category import Category
+from app.models.chat import ChatMessage, Conversation
 from app.models.comment import Comment, CommentStatus
 from app.models.comment_report import CommentReport, ReportReason, ReportStatus
 from app.models.editorial import EditorialEvent, EditorialStatus
@@ -42,9 +43,11 @@ __all__ = [
     "AuthSession",
     "Base",
     "Category",
+    "ChatMessage",
     "Comment",
     "CommentReport",
     "CommentStatus",
+    "Conversation",
     "DeliveryStatus",
     "EditorialEvent",
     "EditorialStatus",

@@ -58,6 +58,7 @@ export function ArticlePage() {
   const image = preferredVariant(post.featured_image_media?.variants) || resolveMediaUrl(post.featured_image)
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
+      {image ? <img src={image} alt={post.featured_image_media?.alt_text || ""} className="mb-8 max-h-[28rem] w-full rounded-3xl object-cover" /> : null}
       <p className="text-sm tracking-[0.16em] text-accent uppercase">{post.category?.name || "Article"}</p>
       <h1 className="mt-3 font-display text-4xl leading-tight break-words sm:text-5xl">{post.title}</h1>
       {post.subtitle ? <p className="mt-4 text-xl text-ink-soft">{post.subtitle}</p> : null}
@@ -68,7 +69,6 @@ export function ArticlePage() {
         {" · "}
         {readingLabel(post.reading_time)}
       </p>
-      {image ? <img src={image} alt={post.featured_image_media?.alt_text || ""} className="mt-8 w-full rounded-3xl" /> : null}
       <div className="mt-8">
         <ArticleBody content={post.content} />
       </div>
@@ -266,8 +266,8 @@ function Related({ postId }: { postId: string }) {
   if (!related.data?.items.length) return null
   return (
     <section className="mt-14">
-      <h2 className="font-display text-3xl">Related</h2>
-      <div className="mt-6 grid gap-6">
+      <h2 className="font-display text-3xl">Related Articles</h2>
+      <div className="mt-6 grid gap-6 sm:grid-cols-3">
         {related.data.items.map((article) => (
           <ArticleCardView key={article.id} article={article} />
         ))}

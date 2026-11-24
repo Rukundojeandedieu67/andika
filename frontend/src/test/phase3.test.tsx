@@ -183,7 +183,7 @@ describe("draft creation", () => {
     renderDesk("/workspace/articles/new")
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText("Title"), "Desk notes")
-    await user.click(screen.getByRole("button", { name: "Save" }))
+    await user.click(screen.getByRole("button", { name: "Save Draft" }))
     expect(createDraft).toHaveBeenCalledWith(expect.objectContaining({ title: "Desk notes", content: "" }))
   })
 
@@ -191,7 +191,7 @@ describe("draft creation", () => {
     vi.mocked(createDraft).mockClear()
     renderDesk("/workspace/articles/new")
     const user = userEvent.setup()
-    await user.click(await screen.findByRole("button", { name: "Save" }))
+    await user.click(await screen.findByRole("button", { name: "Save Draft" }))
     expect(createDraft).not.toHaveBeenCalled()
   })
 })

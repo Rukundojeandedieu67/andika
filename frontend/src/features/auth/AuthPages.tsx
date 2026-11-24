@@ -16,7 +16,7 @@ function AuthShell({ title, children }: { title: string; children: ReactNode }) 
   usePageTitle(title)
   return (
     <main className="mx-auto grid min-h-[70vh] max-w-md place-items-center px-4 py-12">
-      <div className="w-full">
+      <div className="w-full rounded-[2rem] border border-line bg-paper-raised p-8 shadow-[var(--shadow)]">
         <p className="text-sm tracking-[0.2em] text-accent uppercase">ANDIKA</p>
         <h1 className="mt-2 font-display text-4xl">{title}</h1>
         <div className="mt-6">{children}</div>

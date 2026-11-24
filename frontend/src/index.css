@@ -11,7 +11,8 @@
   --line: #e3d9c8;
   --brand: #1d5c4a;
   --brand-strong: #12382d;
-  --accent: #b5522a;
+  --forest: #1a3c34;
+  --accent: #e07a3d;
   --danger: #9b2c2c;
   --success: #1d5c4a;
   --focus: #1d5c4a;
@@ -30,7 +31,8 @@
   --line: #2d3530;
   --brand: #7dbaa6;
   --brand-strong: #d7efe6;
-  --accent: #e39a78;
+  --forest: #10241f;
+  --accent: #e08a55;
   --danger: #f0a3a3;
   --success: #8dceba;
   --focus: #8dceba;
@@ -49,6 +51,7 @@
   --color-line: var(--line);
   --color-brand: var(--brand);
   --color-brand-strong: var(--brand-strong);
+  --color-forest: var(--forest);
   --color-accent: var(--accent);
   --color-danger: var(--danger);
   --color-success: var(--success);

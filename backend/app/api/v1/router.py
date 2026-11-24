@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     analytics,
     auth,
     categories,
+    chats,
     comments,
     health,
     invitations,
@@ -37,3 +38,4 @@ api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(search.discovery_router, prefix="/discovery", tags=["discovery"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+api_router.include_router(chats.router, prefix="/chats", tags=["chats"])

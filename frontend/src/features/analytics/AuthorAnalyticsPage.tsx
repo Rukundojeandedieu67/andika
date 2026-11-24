@@ -73,21 +73,29 @@ export function AuthorAnalyticsPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-4xl">Author analytics</h2>
+        <h2 className="font-display text-4xl">Analytics</h2>
         <Button onClick={() => downloadAuthorExport(query).catch((error: unknown) => toast.error(toApiError(error).message))}>Export CSV</Button>
       </div>
       <div className="mt-4"><AnalyticsFilters query={query} onChange={setQuery} /></div>
       {overview.isLoading ? <div className="mt-6 h-28 animate-pulse rounded-3xl bg-line" /> : null}
       {overview.error ? <ErrorState error={overview.error} onRetry={() => void overview.refetch()} /> : null}
       {overview.data ? (
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <Metric label="Published articles" value={overview.data.published_articles} />
-          <Metric label="All-time views" value={overview.data.total_views} />
-          <Metric label="Period views" value={overview.data.period_views} />
-          <Metric label="All-time approved comments" value={overview.data.total_approved_comments} />
-          <Metric label="Period approved comments" value={overview.data.period_approved_comments} />
-          <Metric label="Average views per article" value={overview.data.average_views_per_article} />
-        </div>
+        <>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <Headline label="Recorded views" value={formatNumber(overview.data.period_views)} hint="Read events in this window, not unique readers." />
+            <Headline label="Approved comments" value={formatNumber(overview.data.period_approved_comments)} hint="Comments approved in this window." />
+            <Headline
+              label="Engagement"
+              value={formatRate(overview.data.period_views > 0 ? (overview.data.period_approved_comments / overview.data.period_views) * 100 : 0)}
+              hint="Approved comments divided by recorded views."
+            />
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <Metric label="Published articles" value={overview.data.published_articles} />
+            <Metric label="All-time views" value={overview.data.total_views} />
+            <Metric label="Average views per article" value={overview.data.average_views_per_article} />
+          </div>
+        </>
       ) : null}
       {overview.data?.comparison ? (
         <p className="mt-3 text-sm text-ink-soft">
@@ -97,11 +105,7 @@ export function AuthorAnalyticsPage() {
       {series.error ? <ErrorState error={series.error} /> : null}
       {series.data && series.data.points.length === 0 ? <p className="mt-6 text-sm text-ink-soft">No read events in this window.</p> : null}
       {series.data && series.data.points.length > 0 ? (
-        <div className="mt-6 flex h-36 items-end gap-1" aria-label="Views over time">
-          {series.data.points.map((point) => (
-            <div key={point.bucket_start} title={`${point.bucket_start}: ${point.views} views, ${point.approved_comments} approved comments`} className="flex-1 rounded-t bg-brand" style={{ height: `${Math.max(point.views, 0) / max * 100}%` }} />
-          ))}
-        </div>
+        <ViewChart points={series.data.points} max={max} />
       ) : null}
       <table className="mt-6 w-full text-left text-sm">
         <thead><tr><th>Article</th><th>Views</th><th>Approved comments</th><th>Engagement</th></tr></thead>
@@ -121,6 +125,36 @@ export function AuthorAnalyticsPage() {
       {articles.data ? <p className="mt-2 text-xs text-ink-soft">{articles.data.engagement_rate_formula}</p> : null}
       {articles.data ? <div className="mt-4"><Pagination page={articles.data.page} pageSize={articles.data.page_size} total={articles.data.total} onPage={(page) => setQuery((current) => ({ ...current, page }))} /></div> : null}
       <AnalyticsNotes limitations={overview.data?.limitations} />
+    </div>
+  )
+}
+
+function ViewChart({
+  points,
+  max,
+}: {
+  points: { bucket_start: string; views: number; approved_comments: number }[]
+  max: number
+}) {
+  const width = 640
+  const height = 180
+  const step = points.length > 1 ? width / (points.length - 1) : width
+  const line = points
+    .map((point, index) => `${index * step},${height - (point.views / max) * (height - 16) - 8}`)
+    .join(" ")
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="mt-6 h-44 w-full" role="img" aria-label="Recorded views over time">
+      <polyline fill="none" stroke="currentColor" strokeWidth="3" className="text-accent" points={line} />
+    </svg>
+  )
+}
+
+function Headline({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-[2rem] border border-line bg-paper-raised p-5">
+      <p className="font-display text-4xl">{value}</p>
+      <p className="mt-1 text-sm">{label}</p>
+      <p className="mt-1 text-xs text-ink-soft">{hint}</p>
     </div>
   )
 }

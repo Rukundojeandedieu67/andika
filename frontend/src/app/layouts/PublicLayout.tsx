@@ -10,11 +10,10 @@ import { displayName } from "@/lib/format"
 import { unreadCount } from "@/services/community"
 
 const links = [
-  { to: "/articles", label: "Articles" },
-  { to: "/discover/trending", label: "Trending" },
+  { to: "/discover/latest", label: "Discover" },
   { to: "/publications", label: "Publications" },
   { to: "/categories", label: "Categories" },
-  { to: "/authors", label: "Authors" },
+  { to: "/tags", label: "Tags" },
 ]
 
 export function PublicLayout() {
@@ -70,7 +69,7 @@ export function PublicLayout() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search stories"
+                placeholder="Search articles..."
                 className="h-10 w-full rounded-full border border-line bg-paper-raised pr-3 pl-9 text-sm"
               />
             </label>
@@ -117,8 +116,8 @@ export function PublicLayout() {
               <Link to="/login" className="rounded-full px-3 py-2 hover:bg-line/60">
                 Sign in
               </Link>
-              <Link to="/register" className="rounded-full bg-brand px-3 py-2 text-paper-raised">
-                Register
+              <Link to="/register" className="rounded-full bg-accent px-4 py-2 text-white">
+                Get Started
               </Link>
             </div>
           )}
@@ -141,7 +140,7 @@ export function PublicLayout() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search stories"
+                placeholder="Search articles..."
                 className="h-11 w-full rounded-full border border-line px-3"
               />
             </form>
@@ -156,18 +155,25 @@ export function PublicLayout() {
         </div>
       ) : null}
       <Outlet />
-      <footer className="mt-16 border-t border-line">
-        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-10 md:grid-cols-3">
+      <footer className="mt-16 bg-forest text-[#f4efe6]">
+        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-12 md:grid-cols-4">
           <div>
             <p className="font-display text-2xl">ANDIKA</p>
-            <p className="mt-2 text-sm text-ink-soft">A global desk for writers, editors, and readers.</p>
+            <p className="mt-2 text-sm text-white/70">Ideas, knowledge, and a more informed world.</p>
           </div>
           <div className="grid gap-2 text-sm">
-            <Link to="/search">Search</Link>
-            <Link to="/tags">Tags</Link>
+            <p className="text-xs tracking-[0.16em] text-white/50 uppercase">Explore</p>
+            <Link to="/articles">Articles</Link>
             <Link to="/publications">Publications</Link>
+            <Link to="/categories">Categories</Link>
           </div>
-          <p className="text-sm text-ink-soft">
+          <div className="grid gap-2 text-sm">
+            <p className="text-xs tracking-[0.16em] text-white/50 uppercase">Community</p>
+            <Link to="/authors">Authors</Link>
+            <Link to="/tags">Tags</Link>
+            <Link to="/search">Search</Link>
+          </div>
+          <p className="text-sm text-white/70">
             Views are recorded reads. Comments shown publicly are approved comments.
           </p>
         </div>

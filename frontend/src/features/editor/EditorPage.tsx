@@ -229,61 +229,52 @@ export function EditorPage() {
   if (!isNew && existing.isLoading) return <div className="h-40 animate-pulse rounded-3xl bg-line" />
   if (!isNew && existing.error) return <p>{toApiError(existing.error).message}</p>
   const image = preferredVariant(draft.featured_image_media?.variants)
+  const canPublish = Boolean(post && canPublishArticle({
+    publicationId: post.publication_id,
+    role: publicationRole,
+    requiresReview: membership.data?.requires_review,
+    editorial: post.editorial_status,
+    status: post.status,
+    isAuthor: isArticleAuthor,
+  }))
   return (
     <form className="grid gap-6" onSubmit={(event) => { void save(event).catch(() => undefined) }}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-display text-4xl">{isNew ? "New article" : "Edit article"}</h2>
-          <p className="mt-1 text-sm text-ink-soft" role="status">
-            {saving ? "Saving…" : dirty ? "Unsaved changes" : "Saved"}
-            {post ? <> · <Badge tone={statusTone(post.status)}>{post.status}</Badge></> : null}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+        <Link to="/workspace/articles" className="text-sm text-ink-soft">← Back to Articles</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-ink-soft" role="status">{saving ? "Saving…" : dirty ? "Unsaved changes" : "Saved"}</p>
+          <Button type="submit" variant="secondary" disabled={saving}>Save Draft</Button>
           <Button type="button" variant="secondary" onClick={() => setPreview((value) => !value)}>{preview ? "Edit" : "Preview"}</Button>
-          <Button type="submit" disabled={saving}>Save</Button>
-          {post && canPublishArticle({
-            publicationId: post.publication_id,
-            role: publicationRole,
-            requiresReview: membership.data?.requires_review,
-            editorial: post.editorial_status,
-            status: post.status,
-            isAuthor: isArticleAuthor,
-          }) ? <Button type="button" onClick={() => act(() => publishPost(id!), "Published.", post.publication_id ? "Publish this article for the publication?" : "Publish this draft? It becomes public.")}>Publish</Button> : null}
-          {post && canUnpublishArticle(post.publication_id, publicationRole, post.status) ? <Button type="button" variant="secondary" onClick={() => act(() => unpublishPost(id!), "Returned to draft.", "Unpublish this article? It leaves public listings and returns to draft.")}>Unpublish</Button> : null}
-          {post && post.status !== "archived" ? <Button type="button" variant="secondary" onClick={() => act(() => archivePost(id!), "Archived.", "Archive this article? It will no longer be public, and the API does not restore archived articles.")}>Archive</Button> : null}
-          {post ? (
-            <Button type="button" variant="danger" onClick={() => { if (window.confirm("Soft-delete this article? It disappears from public and editorial listings.")) deletePost(id!).then(() => navigate("/workspace/articles")).catch((error: unknown) => toast.error(toApiError(error).message)) }}>
-              Delete
-            </Button>
-          ) : null}
+          {canPublish ? <Button type="button" onClick={() => act(() => publishPost(id!), "Published.", post?.publication_id ? "Publish this article for the publication?" : "Publish this draft? It becomes public.")}>Publish Article</Button> : null}
         </div>
       </div>
       {post?.editorial_status ? <p className="text-sm text-ink-soft">Editorial state: {post.editorial_status.replaceAll("_", " ")}</p> : null}
       {post?.status === "archived" ? <p className="text-sm text-ink-soft">This article is archived. The API has no restore transition, so it stays out of public listings.</p> : null}
       {preview ? (
         <article>
+          {image ? <img src={image} alt="" className="mb-6 max-h-[28rem] w-full rounded-3xl object-cover" /> : null}
           <h1 className="font-display text-5xl">{draft.title || "Untitled"}</h1>
           {draft.excerpt ? <p className="mt-3 text-ink-soft">{draft.excerpt}</p> : null}
-          {image ? <img src={image} alt="" className="mt-6 rounded-3xl" /> : null}
           <div className="mt-6"><ArticleBody content={draft.content || ""} /></div>
         </article>
       ) : (
-        <>
-          <Field label="Title" htmlFor="title"><Input id="title" value={draft.title ?? ""} onChange={(event) => update({ title: event.target.value })} required /></Field>
-          {!isNew ? <Field label="Slug" htmlFor="slug" hint="Lowercase letters, numbers, and hyphens. mine and admin are reserved."><Input id="slug" value={draft.slug ?? ""} onChange={(event) => update({ slug: event.target.value })} /></Field> : null}
-          <Field label="Subtitle" htmlFor="subtitle"><Input id="subtitle" value={draft.subtitle ?? ""} onChange={(event) => update({ subtitle: event.target.value })} /></Field>
-          <Field label="Excerpt" htmlFor="excerpt"><Textarea id="excerpt" value={draft.excerpt ?? ""} maxLength={500} onChange={(event) => update({ excerpt: event.target.value })} /></Field>
-          <Field label="Content" htmlFor="content" hint="Stored as plain text. Each save of the title, excerpt, or content keeps a numbered revision, so saving is manual.">
-            <div className="mb-2 flex flex-wrap gap-2" role="toolbar" aria-label="Formatting">
-              <button type="button" className="rounded-full border border-line px-3 py-1 text-sm" onClick={() => format("**", "**")}>Bold</button>
-              <button type="button" className="rounded-full border border-line px-3 py-1 text-sm" onClick={() => format("*", "*")}>Italic</button>
-              <button type="button" className="rounded-full border border-line px-3 py-1 text-sm" onClick={() => format("\n## ", "")}>Heading</button>
-              <button type="button" className="rounded-full border border-line px-3 py-1 text-sm" onClick={() => format("\n- ", "")}>List</button>
-              <button type="button" className="rounded-full border border-line px-3 py-1 text-sm" onClick={() => format("[", "](https://)")}>Link</button>
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-[2rem] border border-line bg-paper-raised p-5">
+            <Input id="title" aria-label="Title" className="h-auto border-0 bg-transparent px-0 font-display text-4xl" value={draft.title ?? ""} placeholder="Article title" onChange={(event) => update({ title: event.target.value })} required />
+            <Input id="subtitle" aria-label="Subtitle" className="mt-2 h-auto border-0 bg-transparent px-0 text-lg" value={draft.subtitle ?? ""} placeholder="Subtitle" onChange={(event) => update({ subtitle: event.target.value })} />
+            <Textarea id="excerpt" aria-label="Excerpt" className="mt-3 border-0 bg-transparent px-0" value={draft.excerpt ?? ""} maxLength={500} placeholder="A concise summary of your article…" onChange={(event) => update({ excerpt: event.target.value })} />
+            <div className="mt-3 flex flex-wrap gap-2 border-y border-line py-2" role="toolbar" aria-label="Formatting">
+              <button type="button" className="rounded-lg px-2 py-1 text-sm hover:bg-paper" onClick={() => format("**", "**")}>Bold</button>
+              <button type="button" className="rounded-lg px-2 py-1 text-sm italic hover:bg-paper" onClick={() => format("*", "*")}>Italic</button>
+              <button type="button" className="rounded-lg px-2 py-1 text-sm hover:bg-paper" onClick={() => format("\n## ", "")}>Heading</button>
+              <button type="button" className="rounded-lg px-2 py-1 text-sm hover:bg-paper" onClick={() => format("\n- ", "")}>List</button>
+              <button type="button" className="rounded-lg px-2 py-1 text-sm hover:bg-paper" onClick={() => format("[", "](https://)")}>Link</button>
             </div>
-            <Textarea ref={contentRef} id="content" className="min-h-80 font-serif" value={draft.content ?? ""} onChange={(event) => update({ content: event.target.value })} />
-          </Field>
+            <Textarea ref={contentRef} id="content" aria-label="Content" className="mt-3 min-h-80 border-0 bg-transparent px-0 font-serif text-lg" value={draft.content ?? ""} placeholder="Start writing…" onChange={(event) => update({ content: event.target.value })} />
+            <p className="text-xs text-ink-soft">Stored as plain text. Each save of the title, excerpt, or content keeps a numbered revision.</p>
+          </div>
+          <aside className="grid gap-4 rounded-[2rem] border border-line bg-paper-raised p-5">
+            <h3 className="font-display text-2xl">Article Settings</h3>
           {isNew ? (
             <Field label="Publication" htmlFor="publication" hint="Leave empty for an independent article. Readers who are publication members must choose a publication.">
               <Select id="publication" value={selectedPublication ?? ""} onChange={(event) => update({ publication_id: event.target.value || null })}>
@@ -369,7 +360,18 @@ export function EditorPage() {
               {draft.featured_image_media ? <button type="button" className="mt-2 text-sm" onClick={() => update({ featured_image_media: null })}>Remove featured image</button> : null}
             </section>
           ) : null}
-        </>
+            <div>
+              <p className="text-sm font-medium">Status</p>
+              <p className="mt-2">{post ? <Badge tone={statusTone(post.status)}>{post.status}</Badge> : <Badge>Draft</Badge>}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {post && canUnpublishArticle(post.publication_id, publicationRole, post.status) ? <Button type="button" size="sm" variant="secondary" onClick={() => act(() => unpublishPost(id!), "Returned to draft.", "Unpublish this article? It leaves public listings and returns to draft.")}>Unpublish</Button> : null}
+                {post && post.status !== "archived" ? <Button type="button" size="sm" variant="secondary" onClick={() => act(() => archivePost(id!), "Archived.", "Archive this article? It will no longer be public, and the API does not restore archived articles.")}>Archive</Button> : null}
+                {post ? <Button type="button" size="sm" variant="danger" onClick={() => { if (window.confirm("Soft-delete this article? It disappears from public and editorial listings.")) deletePost(id!).then(() => navigate("/workspace/articles")).catch((error: unknown) => toast.error(toApiError(error).message)) }}>Delete</Button> : null}
+              </div>
+            </div>
+            {!isNew ? <Field label="Slug" htmlFor="slug" hint="Lowercase letters, numbers, and hyphens. mine and admin are reserved."><Input id="slug" value={draft.slug ?? ""} onChange={(event) => update({ slug: event.target.value })} /></Field> : null}
+          </aside>
+        </div>
       )}
       {post?.publication_id ? (
         <section className="rounded-3xl border border-line p-4">

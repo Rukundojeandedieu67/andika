@@ -15,10 +15,10 @@ const items = [
 
 export function AdminLayout() {
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[220px_1fr]">
-      <aside>
-        <p className="text-xs tracking-[0.18em] text-accent uppercase">Administration</p>
-        <h1 className="mt-2 font-display text-3xl">Platform</h1>
+    <div className="min-h-screen bg-paper lg:grid lg:grid-cols-[240px_1fr]">
+      <aside className="bg-forest px-4 py-6 text-[#f4efe6]">
+        <NavLink to="/" className="font-display text-2xl">ANDIKA</NavLink>
+        <p className="text-xs tracking-[0.16em] text-white/60 uppercase">Administration</p>
         <nav className="mt-6 grid gap-1" aria-label="Administration">
           {items.map((item) => (
             <NavLink
@@ -26,7 +26,7 @@ export function AdminLayout() {
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-xl px-3 py-2 text-sm ${isActive ? "bg-ink text-paper" : "hover:bg-line/60"}`
+                `rounded-xl px-3 py-2 text-sm ${isActive ? "bg-white/15 text-white" : "text-white/75 hover:bg-white/10"}`
               }
             >
               {item.label}
@@ -34,7 +34,7 @@ export function AdminLayout() {
           ))}
         </nav>
       </aside>
-      <div>
+      <div className="px-4 py-8 lg:px-8">
         <Outlet />
       </div>
     </div>

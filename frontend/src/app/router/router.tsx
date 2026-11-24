@@ -51,6 +51,7 @@ import {
   AdminTagsPage,
 } from "@/features/administration/AdminPages"
 import { MyCommentsPage } from "@/features/comments/MyCommentsPage"
+import { ChatPage } from "@/features/chat/ChatPage"
 
 export const router = createBrowserRouter([
   {
@@ -88,46 +89,59 @@ export const router = createBrowserRouter([
           { path: "notifications", element: <NotificationsPage /> },
           { path: "notifications/preferences", element: <NotificationPreferencesPage /> },
           { path: "invitations/accept", element: <AcceptInvitationPage /> },
+        ],
+      },
+      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
+  {
+    path: "/admin",
+    element: <RequireAuth />,
+    errorElement: <RouteError />,
+    children: [
+      {
+        element: <RequireAdmin />,
+        children: [
           {
-            path: "workspace",
-            element: <WorkspaceLayout />,
+            element: <AdminLayout />,
             children: [
-              { index: true, element: <WorkspaceHome /> },
-              { path: "articles", element: <ArticleListPage /> },
-              { path: "articles/new", element: <EditorPage /> },
-              { path: "articles/:id", element: <EditorPage /> },
-              { path: "media", element: <MediaPage /> },
-              { path: "analytics", element: <AuthorAnalyticsPage /> },
-              { path: "publications", element: <MyPublicationsPage /> },
-              { path: "publications/new", element: <NewPublicationPage /> },
-              { path: "publications/:id", element: <PublicationManagePage /> },
-              { path: "comments", element: <MyCommentsPage /> },
-            ],
-          },
-          {
-            element: <RequireAdmin />,
-            children: [
-              {
-                path: "admin",
-                element: <AdminLayout />,
-                children: [
-                  { index: true, element: <AdminHome /> },
-                  { path: "analytics", element: <AdminAnalyticsPage /> },
-                  { path: "articles", element: <AdminArticlesPage /> },
-                  { path: "categories", element: <AdminCategoriesPage /> },
-                  { path: "tags", element: <AdminTagsPage /> },
-                  { path: "comments", element: <AdminCommentsPage /> },
-                  { path: "reports", element: <AdminReportsPage /> },
-                  { path: "media", element: <AdminMediaPage /> },
-                  { path: "search", element: <AdminSearchPage /> },
-                  { path: "delivery", element: <AdminDeliveryPage /> },
-                ],
-              },
+              { index: true, element: <AdminHome /> },
+              { path: "analytics", element: <AdminAnalyticsPage /> },
+              { path: "articles", element: <AdminArticlesPage /> },
+              { path: "categories", element: <AdminCategoriesPage /> },
+              { path: "tags", element: <AdminTagsPage /> },
+              { path: "comments", element: <AdminCommentsPage /> },
+              { path: "reports", element: <AdminReportsPage /> },
+              { path: "media", element: <AdminMediaPage /> },
+              { path: "search", element: <AdminSearchPage /> },
+              { path: "delivery", element: <AdminDeliveryPage /> },
             ],
           },
         ],
       },
-      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
+  {
+    path: "/workspace",
+    element: <RequireAuth />,
+    errorElement: <RouteError />,
+    children: [
+      {
+        element: <WorkspaceLayout />,
+        children: [
+          { index: true, element: <WorkspaceHome /> },
+          { path: "articles", element: <ArticleListPage /> },
+          { path: "articles/new", element: <EditorPage /> },
+          { path: "articles/:id", element: <EditorPage /> },
+          { path: "media", element: <MediaPage /> },
+          { path: "analytics", element: <AuthorAnalyticsPage /> },
+          { path: "messages", element: <ChatPage /> },
+          { path: "publications", element: <MyPublicationsPage /> },
+          { path: "publications/new", element: <NewPublicationPage /> },
+          { path: "publications/:id", element: <PublicationManagePage /> },
+          { path: "comments", element: <MyCommentsPage /> },
+        ],
+      },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },
