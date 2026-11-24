@@ -13,7 +13,15 @@ import { useAuth } from "@/hooks/useAuth"
 import { usePageTitle } from "@/hooks/usePageTitle"
 import { toApiError } from "@/lib/errors"
 import { mediaFileError, statusTone } from "@/features/editor/article-desk"
+import { formatDateTime } from "@/lib/format"
 import { preferredVariant } from "@/lib/media-url"
+import {
+  canDecideReview,
+  canPublishArticle,
+  canStartReview,
+  canSubmitOwnArticle,
+  canUnpublishArticle,
+} from "@/features/publications/publication-desk"
 import {
   approvePost,
   archivePost,
@@ -30,9 +38,9 @@ import {
 } from "@/services/content"
 import { editorialDetail } from "@/services/content"
 import { myMedia, uploadMedia } from "@/services/media"
-import { myPublications } from "@/services/publications"
+import { managePublication, myPublications } from "@/services/publications"
 import { categoryTree, createTag, listTags } from "@/services/taxonomy"
-import type { CategoryNode, PostRead } from "@/types/api"
+import type { CategoryNode, EditorialPostDetail, PostRead } from "@/types/api"
 
 function flatten(nodes: CategoryNode[], prefix = ""): Array<{ id: string; label: string }> {
   return nodes.flatMap((node) => [
@@ -56,7 +64,13 @@ export function EditorPage() {
     enabled: !isNew,
     queryFn: async () => {
       if (publicationHint) return editorialDetail(publicationHint, id!)
-      return readMine(id!)
+      const mine = await readMine(id!)
+      if (!mine.publication_id) return mine
+      try {
+        return await editorialDetail(mine.publication_id, id!)
+      } catch {
+        return mine
+      }
     },
   })
   const categories = useQuery({ queryKey: ["categories"], queryFn: categoryTree })
@@ -118,6 +132,22 @@ export function EditorPage() {
 
   const categoryOptions = useMemo(() => flatten(categories.data ?? []), [categories.data])
   const post = existing.data
+  const events = post && "events" in post ? (post as EditorialPostDetail).events : []
+  const publicationId = post?.publication_id || (isNew ? publicationHint : null)
+  const membership = useQuery({
+    queryKey: ["publication-manage", publicationId],
+    queryFn: () => managePublication(publicationId!),
+    enabled: Boolean(publicationId) && Boolean(user?.is_verified),
+    retry: false,
+  })
+  const publicationRole = membership.data?.caller_role
+  const isArticleAuthor = Boolean(user && post && post.author.id === user.id)
+  useEffect(() => {
+    if (!isNew || !publicationHint || draft.publication_id) return
+    const match = publications.data?.items.find((item) => item.id === publicationHint && item.membership_status === "active")
+    if (!match) return
+    setDraft((current) => (current.publication_id ? current : { ...current, publication_id: match.id }))
+  }, [draft.publication_id, isNew, publicationHint, publications.data])
   function update(partial: Record<string, unknown>) {
     setDraft((current) => ({ ...current, ...partial }))
     setDirty(true)
@@ -151,7 +181,10 @@ export function EditorPage() {
       toast.success(isNew ? "Draft created." : "Saved.")
       await queryClient.invalidateQueries({ queryKey: ["mine"] })
       await queryClient.invalidateQueries({ queryKey: ["posts"] })
-      if (isNew) navigate(`/workspace/articles/${saved.id}`, { replace: true })
+      if (isNew) {
+        const next = saved.publication_id ? `?publication=${saved.publication_id}` : ""
+        navigate(`/workspace/articles/${saved.id}${next}`, { replace: true })
+      }
       else {
         await queryClient.invalidateQueries({ queryKey: ["editor", id] })
         await queryClient.invalidateQueries({ queryKey: ["revisions", id] })
@@ -213,8 +246,15 @@ export function EditorPage() {
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={() => setPreview((value) => !value)}>{preview ? "Edit" : "Preview"}</Button>
           <Button type="submit" disabled={saving}>Save</Button>
-          {post?.status === "draft" ? <Button type="button" onClick={() => act(() => publishPost(id!), "Published.", "Publish this draft? Independent articles become public. Publication articles publish only when your membership allows it.")}>Publish</Button> : null}
-          {post?.status === "published" ? <Button type="button" variant="secondary" onClick={() => act(() => unpublishPost(id!), "Returned to draft.", "Unpublish this article? It leaves public listings and returns to draft.")}>Unpublish</Button> : null}
+          {post && canPublishArticle({
+            publicationId: post.publication_id,
+            role: publicationRole,
+            requiresReview: membership.data?.requires_review,
+            editorial: post.editorial_status,
+            status: post.status,
+            isAuthor: isArticleAuthor,
+          }) ? <Button type="button" onClick={() => act(() => publishPost(id!), "Published.", post.publication_id ? "Publish this article for the publication?" : "Publish this draft? It becomes public.")}>Publish</Button> : null}
+          {post && canUnpublishArticle(post.publication_id, publicationRole, post.status) ? <Button type="button" variant="secondary" onClick={() => act(() => unpublishPost(id!), "Returned to draft.", "Unpublish this article? It leaves public listings and returns to draft.")}>Unpublish</Button> : null}
           {post && post.status !== "archived" ? <Button type="button" variant="secondary" onClick={() => act(() => archivePost(id!), "Archived.", "Archive this article? It will no longer be public, and the API does not restore archived articles.")}>Archive</Button> : null}
           {post ? (
             <Button type="button" variant="danger" onClick={() => { if (window.confirm("Soft-delete this article? It disappears from public and editorial listings.")) deletePost(id!).then(() => navigate("/workspace/articles")).catch((error: unknown) => toast.error(toApiError(error).message)) }}>
@@ -339,17 +379,32 @@ export function EditorPage() {
         <section className="rounded-3xl border border-line p-4">
           <h3 className="font-display text-2xl">Editorial actions</h3>
           <div className="mt-3 flex flex-wrap gap-2">
-            {post.editorial_status === "draft" || post.editorial_status === "changes_requested" ? <Button type="button" onClick={() => act(() => submitPost(post.id), "Submitted.", "Submit this article to the publication editors?")}>Submit for review</Button> : null}
-            {post.editorial_status === "submitted" ? <Button type="button" onClick={() => act(() => startReview(post.id), "Review started.", "Start review of this submission?")}>Start review</Button> : null}
-            {post.editorial_status === "submitted" || post.editorial_status === "in_review" ? (
+            {canSubmitOwnArticle(isArticleAuthor, post.editorial_status) ? <Button type="button" onClick={() => act(() => submitPost(post.id), "Submitted.", "Submit this article to the publication editors?")}>Submit for review</Button> : null}
+            {canStartReview(publicationRole, post.editorial_status) ? <Button type="button" onClick={() => act(() => startReview(post.id), "Review started.", "Start review of this submission?")}>Start review</Button> : null}
+            {canDecideReview(publicationRole, post.editorial_status) ? (
               <>
-                <Input className="max-w-sm" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason for changes" />
+                <Input className="max-w-sm" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason for changes" aria-label="Reason for changes" />
                 <Button type="button" variant="secondary" onClick={() => act(() => requestChanges(post.id, reason), "Changes requested.", "Send this change request to the author?")}>Request changes</Button>
                 <Button type="button" onClick={() => act(() => approvePost(post.id), "Approved.", "Approve this article for publication?")}>Approve</Button>
               </>
             ) : null}
           </div>
-          <p className="mt-2 text-sm text-ink-soft">The API rejects transitions the current membership cannot make. Contributors cannot publish.</p>
+          <p className="mt-2 text-sm text-ink-soft">
+            {membership.data?.requires_review
+              ? "This publication requires review. An owner or editor publishes an article after it is approved."
+              : "Owners and editors can publish. An author can publish their own article when review is off. Contributors submit drafts."}
+          </p>
+          {events.length > 0 ? (
+            <ul className="mt-4 grid gap-2 text-sm">
+              {events.map((event) => (
+                <li key={event.id} className="rounded-2xl border border-line px-3 py-2">
+                  {formatDateTime(event.created_at)} · {event.actor.username} · {event.action.replaceAll("_", " ")}
+                  {event.from_status ? ` · ${event.from_status} to ${event.to_status}` : ` · ${event.to_status}`}
+                  {event.reason ? ` · ${event.reason}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
       ) : null}
       {revisions.data && revisions.data.length > 0 ? (
