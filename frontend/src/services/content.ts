@@ -89,6 +89,18 @@ export async function listMine(params: { page?: number; page_size?: number; sear
   return data
 }
 
+export async function collectMine(search?: string) {
+  const pageSize = 100
+  const first = await listMine({ page: 1, page_size: pageSize, search: search || undefined })
+  const items = [...first.items]
+  const pages = Math.ceil(first.total / pageSize)
+  for (let page = 2; page <= Math.min(pages, 5); page += 1) {
+    const next = await listMine({ page, page_size: pageSize, search: search || undefined })
+    items.push(...next.items)
+  }
+  return { items, total: first.total, complete: items.length >= first.total }
+}
+
 export async function readMine(postId: string) {
   const { data } = await api.get<PostRead>(`/posts/mine/${postId}`)
   return data

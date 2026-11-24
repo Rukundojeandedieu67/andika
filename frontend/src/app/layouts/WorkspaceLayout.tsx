@@ -17,14 +17,14 @@ export function WorkspaceLayout() {
       <aside>
         <p className="text-xs tracking-[0.18em] text-accent uppercase">Workspace</p>
         <h1 className="mt-2 font-display text-3xl">Desk</h1>
-        <nav className="mt-6 grid gap-1" aria-label="Workspace">
+        <nav className="mt-4 flex gap-1 overflow-x-auto lg:mt-6 lg:grid" aria-label="Workspace">
           {items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-xl px-3 py-2 text-sm ${isActive ? "bg-brand text-paper-raised" : "hover:bg-line/60"}`
+                `shrink-0 rounded-xl px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${isActive ? "bg-brand text-paper-raised" : "hover:bg-line/60"}`
               }
             >
               {item.label}
